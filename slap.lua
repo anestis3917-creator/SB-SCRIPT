@@ -5,7 +5,7 @@ local CONFIG = {
     PROMPT_PARENT_PATTERNS = {
         "crate", "box", "loot", "barrel", "chest", "supply", "apple", "banana",
     },
-    ROYALE_MARKER_NAME = "SlapRoyale",
+    ROYALE_MARKER_NAME = "Arena",
     AURA_TEXTURE_ID    = "rbxassetid://0",
     AURA_PARK_HEIGHT   = 5000,
     LOOT_COOLDOWN      = 3.0,
