@@ -1,4 +1,4 @@
--- slap.lua — loadstring entry (v6: full UI)
+-- slap.lua — loadstring entry (v7.1: fast-walk loot, cancelable, paced)
 -- usage: loadstring(game:HttpGet("URL_HERE"))()
 
 local CONFIG = {
@@ -11,6 +11,11 @@ local CONFIG = {
     LOOT_COOLDOWN      = 3.0,
     LOOT_JITTER        = 0.5,
     LOOT_RANGE         = 500,
+    WALK_TIMEOUT       = 8.0,
+    ARRIVE_DISTANCE    = 6,
+    PRE_PROMPT_DELAY_MIN = 0.15,
+    PRE_PROMPT_DELAY_MAX = 0.40,
+    LOOT_WALKSPEED     = 32,    -- boosted during loot; tweak higher/lower
     ESP_RANGE          = 2000,
     BASE_HITBOX        = 5,
     SLIDER_MAX         = 10,
@@ -21,6 +26,7 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local PathfindingService = game:GetService("PathfindingService")
 local LP = Players.LocalPlayer
 
 -- ============================ STATE ============================
@@ -32,7 +38,58 @@ local STATE = {
     SLAP_AURA   = false,
     EXPANDER    = 1,
 }
+
 local AURA_PART = nil
+local LOOT_GEN  = 0
+local SAVED_WALKSPEED = nil   -- remembered while boosted
+
+-- ============================ HELPERS ============================
+local function get_hrp()
+    local char = LP.Character
+    return char and char:FindFirstChild("HumanoidRootPart") or nil
+end
+
+local function get_humanoid()
+    local char = LP.Character
+    return char and char:FindFirstChildOfClass("Humanoid") or nil
+end
+
+local function boost_walkspeed()
+    local hum = get_humanoid()
+    if not hum then return end
+    if SAVED_WALKSPEED == nil then SAVED_WALKSPEED = hum.WalkSpeed end
+    hum.WalkSpeed = CONFIG.LOOT_WALKSPEED
+end
+
+local function restore_walkspeed()
+    local hum = get_humanoid()
+    if not hum then SAVED_WALKSPEED = nil return end
+    if SAVED_WALKSPEED ~= nil then
+        hum.WalkSpeed = SAVED_WALKSPEED
+        SAVED_WALKSPEED = nil
+    end
+end
+
+local function in_royale()
+    local m = Workspace:FindFirstChild(CONFIG.ROYALE_MARKER_NAME)
+        or game:GetService("ReplicatedStorage"):FindFirstChild(CONFIG.ROYALE_MARKER_NAME)
+    return m ~= nil
+end
+
+local function matches(name)
+    local lower = name:lower()
+    for _, pat in ipairs(CONFIG.PROMPT_PARENT_PATTERNS) do
+        if lower:find(pat, 1, true) then return true end
+    end
+    return false
+end
+
+local function prompt_part(prompt)
+    local p = prompt.Parent
+    if not p then return nil end
+    if p:IsA("BasePart") then return p end
+    return p:FindFirstChildWhichIsA("BasePart")
+end
 
 -- ============================ HITBOX ============================
 local HITBOX_NAMES = { "Hitbox", "SlapHitbox", "Aura", "SlapAura", "Handle" }
@@ -101,7 +158,7 @@ end
 local function update_player_esp()
     local cam = Workspace.CurrentCamera
     if not cam then return end
-    local my_hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    local my_hrp = get_hrp()
     local my_pos = my_hrp and my_hrp.Position
     for _, p in ipairs(Players:GetPlayers()) do
         if p == LP then continue end
@@ -141,7 +198,7 @@ end
 local function update_item_esp()
     local cam = Workspace.CurrentCamera
     if not cam then return end
-    local my_hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    local my_hrp = get_hrp()
     local my_pos = my_hrp and my_hrp.Position
     local seen = {}
     for _, obj in ipairs(Workspace:GetDescendants()) do
@@ -153,8 +210,7 @@ local function update_item_esp()
             if lower:find(pat, 1, true) then hit = true break end
         end
         if not hit then continue end
-        local part = obj.Parent:IsA("BasePart") and obj.Parent
-            or obj.Parent:FindFirstChildWhichIsA("BasePart")
+        local part = prompt_part(obj)
         if not part then continue end
         local dist = my_pos and (part.Position - my_pos).Magnitude or 0
         if dist > CONFIG.ESP_RANGE then continue end
@@ -179,19 +235,6 @@ local function update_item_esp()
 end
 
 -- ============================ LOOT ============================
-local function matches(name)
-    local lower = name:lower()
-    for _, pat in ipairs(CONFIG.PROMPT_PARENT_PATTERNS) do
-        if lower:find(pat, 1, true) then return true end
-    end
-    return false
-end
-
-local function get_hrp()
-    local char = LP.Character
-    return char and char:FindFirstChild("HumanoidRootPart") or nil
-end
-
 local function nearest_prompt()
     local hrp = get_hrp()
     if not hrp then return nil end
@@ -200,8 +243,7 @@ local function nearest_prompt()
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if not obj:IsA("ProximityPrompt") then continue end
         if not obj.Parent or not matches(obj.Parent.Name) then continue end
-        local part = obj.Parent:IsA("BasePart") and obj.Parent
-            or obj.Parent:FindFirstChildWhichIsA("BasePart")
+        local part = prompt_part(obj)
         if not part then continue end
         local d = (part.Position - my_pos).Magnitude
         if d < best_dist then best_dist = d best = obj end
@@ -209,27 +251,128 @@ local function nearest_prompt()
     return best, best_dist
 end
 
-local function loot_once()
-    local prompt = nearest_prompt()
-    if not prompt then return false end
-    pcall(function()
-        prompt.RequiresLineOfSight = false
-        prompt.MaxActivationDistance = 9e9
+local function walk_to(part, gen)
+    local hrp = get_hrp()
+    local hum = get_humanoid()
+    if not hrp or not hum then return false end
+
+    boost_walkspeed()
+
+    local path = PathfindingService:CreatePath({
+        AgentRadius = 2,
+        AgentHeight = 5,
+        AgentCanJump = true,
+    })
+    local ok = pcall(function()
+        path:ComputeAsync(hrp.Position, part.Position)
     end)
-    pcall(function()
-        prompt:InputHoldBegin()
-        task.wait(prompt.HoldDuration + 0.05)
-        prompt:InputHoldEnd()
-    end)
+
+    if not ok or path.Status ~= Enum.PathStatus.Success then
+        hum:MoveTo(part.Position)
+        local t0 = tick()
+        while (tick() - t0) < CONFIG.WALK_TIMEOUT do
+            if gen ~= LOOT_GEN or not STATE.AUTO_LOOT then
+                hum:MoveTo(hrp.Position)
+                restore_walkspeed()
+                return false
+            end
+            local d = (hrp.Position - part.Position).Magnitude
+            if d <= CONFIG.ARRIVE_DISTANCE then return true end
+            task.wait(0.05)
+        end
+        return false
+    end
+
+    local waypoints = path:GetWaypoints()
+    for i = 2, #waypoints do
+        if gen ~= LOOT_GEN or not STATE.AUTO_LOOT then
+            hum:MoveTo(hrp.Position)
+            restore_walkspeed()
+            return false
+        end
+        local wp = waypoints[i]
+        if wp.Action == Enum.PathWaypointAction.Jump then
+            hum.Jump = true
+        end
+        hum:MoveTo(wp.Position)
+        local t0 = tick()
+        local reached = false
+        while (tick() - t0) < CONFIG.WALK_TIMEOUT / math.max(1, #waypoints) do
+            if gen ~= LOOT_GEN or not STATE.AUTO_LOOT then
+                hum:MoveTo(hrp.Position)
+                restore_walkspeed()
+                return false
+            end
+            if (hrp.Position - wp.Position).Magnitude <= 3 then
+                reached = true
+                break
+            end
+            task.wait(0.03)
+        end
+        if not reached then return false end
+    end
+    hum:MoveTo(hrp.Position)
     return true
 end
 
-local function in_royale()
-    local m = Workspace:FindFirstChild(CONFIG.ROYALE_MARKER_NAME)
-        or game:GetService("ReplicatedStorage"):FindFirstChild(CONFIG.ROYALE_MARKER_NAME)
-    return m ~= nil
+local function loot_cycle()
+    local my_gen = LOOT_GEN
+    local prompt, _ = nearest_prompt()
+    if not prompt then return false end
+
+    local part = prompt_part(prompt)
+    if not part then return false end
+
+    local arrived = walk_to(part, my_gen)
+    if my_gen ~= LOOT_GEN or not STATE.AUTO_LOOT then
+        restore_walkspeed()
+        return false
+    end
+    if not arrived then
+        restore_walkspeed()
+        return false
+    end
+
+    -- arrived: back to normal speed, then a small human pause
+    restore_walkspeed()
+
+    local pre = CONFIG.PRE_PROMPT_DELAY_MIN
+        + math.random() * (CONFIG.PRE_PROMPT_DELAY_MAX - CONFIG.PRE_PROMPT_DELAY_MIN)
+    task.wait(pre)
+    if my_gen ~= LOOT_GEN or not STATE.AUTO_LOOT then return false end
+
+    if prompt.Parent then
+        pcall(function()
+            prompt.RequiresLineOfSight = false
+            prompt.MaxActivationDistance = 9e9
+        end)
+        pcall(function()
+            prompt:InputHoldBegin()
+            task.wait(prompt.HoldDuration + 0.05)
+            prompt:InputHoldEnd()
+        end)
+    end
+    return true
 end
 
+task.spawn(function()
+    while task.wait(0.5) do
+        if not STATE.AUTO_LOOT or not in_royale() then continue end
+
+        pcall(loot_cycle)
+        restore_walkspeed()   -- safety net; never leave boosted
+
+        local wait_for = CONFIG.LOOT_COOLDOWN
+            + (math.random() * 2 - 1) * CONFIG.LOOT_JITTER
+        local t0 = tick()
+        while (tick() - t0) < wait_for do
+            if not STATE.AUTO_LOOT then break end
+            task.wait(0.1)
+        end
+    end
+end)
+
+-- ============================ AURA ============================
 local function make_aura()
     if AURA_PART then return end
     local part = Instance.new("Part")
@@ -260,18 +403,9 @@ local function follow_aura()
     if hrp then AURA_PART.CFrame = hrp.CFrame end
 end
 
-task.spawn(function()
-    while task.wait(0.5) do
-        if STATE.AUTO_LOOT and in_royale() then
-            loot_once()
-            local wait_for = CONFIG.LOOT_COOLDOWN + (math.random() * 2 - 1) * CONFIG.LOOT_JITTER
-            task.wait(wait_for)
-        end
-    end
-end)
-
 LP.CharacterAdded:Connect(function()
     task.wait(1)
+    SAVED_WALKSPEED = nil
     if STATE.SLAP_AURA then apply_expander() end
 end)
 
@@ -297,6 +431,7 @@ local COLORS = {
     textDim  = Color3.fromRGB(130, 130, 140),
     track    = Color3.fromRGB(45, 45, 54),
     hud      = Color3.fromRGB(0, 255, 140),
+    danger   = Color3.fromRGB(200, 70, 70),
 }
 
 local ScreenGui = Instance.new("ScreenGui")
@@ -305,7 +440,7 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = LP:WaitForChild("PlayerGui")
 
 local panel = Instance.new("Frame")
-panel.Size = UDim2.new(0, 260, 0, 400)
+panel.Size = UDim2.new(0, 260, 0, 460)
 panel.Position = UDim2.new(0, 20, 0, 20)
 panel.BackgroundColor3 = COLORS.bg
 panel.BorderSizePixel = 0
@@ -317,7 +452,6 @@ stroke.Color = Color3.fromRGB(50, 50, 60)
 stroke.Thickness = 1
 stroke.Parent = panel
 
--- title bar
 local titleBar = Instance.new("Frame")
 titleBar.Size = UDim2.new(1, 0, 0, 34)
 titleBar.BackgroundColor3 = COLORS.panel
@@ -343,7 +477,6 @@ titleLabel.TextSize = 13
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = titleBar
 
--- minimize button
 local minBtn = Instance.new("TextButton")
 minBtn.Size = UDim2.new(0, 24, 0, 24)
 minBtn.Position = UDim2.new(1, -56, 0, 5)
@@ -356,7 +489,6 @@ minBtn.BorderSizePixel = 0
 minBtn.Parent = titleBar
 Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 6)
 
--- close / unload
 local closeBtn = Instance.new("TextButton")
 closeBtn.Size = UDim2.new(0, 24, 0, 24)
 closeBtn.Position = UDim2.new(1, -28, 0, 5)
@@ -369,7 +501,6 @@ closeBtn.BorderSizePixel = 0
 closeBtn.Parent = titleBar
 Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
 
--- content container (scrollable)
 local content = Instance.new("ScrollingFrame")
 content.Size = UDim2.new(1, -12, 1, -46)
 content.Position = UDim2.new(0, 6, 0, 40)
@@ -386,7 +517,6 @@ layout.Padding = UDim.new(0, 6)
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Parent = content
 
--- section header
 local function section(text)
     local h = Instance.new("TextLabel")
     h.Size = UDim2.new(1, -8, 0, 22)
@@ -400,7 +530,6 @@ local function section(text)
     return h
 end
 
--- toggle row
 local function toggle_row(text, key, callback)
     local row = Instance.new("Frame")
     row.Size = UDim2.new(1, -8, 0, 34)
@@ -454,7 +583,16 @@ local function toggle_row(text, key, callback)
         }):Play()
         if callback then callback(v) end
     end
-    btn.MouseButton1Click:Connect(function() set(not on) end)
+    btn.MouseButton1Click:Connect(function()
+        set(not on)
+        if not on and key == "AUTO_LOOT" then
+            LOOT_GEN = LOOT_GEN + 1
+            local hum = get_humanoid()
+            local hrp = get_hrp()
+            if hum and hrp then hum:MoveTo(hrp.Position) end
+            restore_walkspeed()
+        end
+    end)
     btn.MouseEnter:Connect(function()
         TweenService:Create(row, TweenInfo.new(0.1), { BackgroundColor3 = COLORS.rowHov }):Play()
     end)
@@ -462,10 +600,24 @@ local function toggle_row(text, key, callback)
         TweenService:Create(row, TweenInfo.new(0.1), { BackgroundColor3 = COLORS.row }):Play()
     end)
 
-    return { row = row, set = set }
+    return { row = row, set = set, get = function() return on end }
 end
 
--- slider row
+local function action_row(text, callback, danger)
+    local row = Instance.new("TextButton")
+    row.Size = UDim2.new(1, -8, 0, 30)
+    row.BackgroundColor3 = danger and COLORS.danger or COLORS.row
+    row.Text = text
+    row.TextColor3 = COLORS.text
+    row.Font = Enum.Font.GothamBold
+    row.TextSize = 12
+    row.BorderSizePixel = 0
+    row.Parent = content
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+    row.MouseButton1Click:Connect(callback)
+    return row
+end
+
 local function slider_row(text, min, max, initial, callback)
     local row = Instance.new("Frame")
     row.Size = UDim2.new(1, -8, 0, 54)
@@ -568,7 +720,6 @@ local function slider_row(text, min, max, initial, callback)
     local api = {}
     function api.set_locked(v)
         locked = v
-        local a = v and 0.35 or 1
         TweenService:Create(track, TweenInfo.new(0.15), { BackgroundTransparency = v and 0.5 or 0 }):Play()
         fill.BackgroundTransparency = v and 0.6 or 0
         knob.BackgroundTransparency = v and 0.5 or 0
@@ -582,12 +733,11 @@ local function slider_row(text, min, max, initial, callback)
     return api
 end
 
--- ---- build the UI ----
+-- ---- build UI ----
 section("COMBAT")
 
-local slapAuraApi  -- forward decl
-
-local slapRow = toggle_row("Slap Aura", "SLAP_AURA", function(v)
+local slapAuraApi
+toggle_row("Slap Aura", "SLAP_AURA", function(v)
     if v then
         if slapAuraApi then slapAuraApi.set_locked(false) end
         apply_expander()
@@ -606,7 +756,18 @@ slapAuraApi.set_locked(true)
 
 section("LOOT")
 
-toggle_row("Auto Loot", "AUTO_LOOT")
+local lootToggle
+lootToggle = toggle_row("Auto Loot  (walk + collect)", "AUTO_LOOT")
+
+action_row("Stop Looting", function()
+    LOOT_GEN = LOOT_GEN + 1
+    STATE.AUTO_LOOT = false
+    if lootToggle then lootToggle.set(false) end
+    local hum = get_humanoid()
+    local hrp = get_hrp()
+    if hum and hrp then hum:MoveTo(hrp.Position) end
+    restore_walkspeed()
+end, true)
 
 section("ESP")
 
@@ -617,7 +778,6 @@ section("MISC")
 
 toggle_row("Hide Aura Above Lobby", "HIDE_AURA")
 
--- status footer
 local footer = Instance.new("TextLabel")
 footer.Size = UDim2.new(1, -8, 0, 20)
 footer.BackgroundTransparency = 1
@@ -634,15 +794,10 @@ task.spawn(function()
         for k, v in pairs(STATE) do
             if v and v ~= false and v ~= 1 then table.insert(live, k) end
         end
-        if #live == 0 then
-            footer.Text = "ready."
-        else
-            footer.Text = "live: " .. table.concat(live, ", ")
-        end
+        footer.Text = #live == 0 and "ready." or ("live: " .. table.concat(live, ", "))
     end
 end)
 
--- minimize
 local minimized = false
 local fullSize = panel.Size
 minBtn.MouseButton1Click:Connect(function()
@@ -656,67 +811,8 @@ minBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- unload
 closeBtn.MouseButton1Click:Connect(function()
-    for _, d in pairs(playerDrawings) do
-        for _, o in pairs(d) do pcall(function() o:Remove() end) end
-    end
-    for _, d in pairs(itemDrawings) do
-        for _, o in pairs(d) do pcall(function() o:Remove() end) end
-    end
-    if hudLabel then pcall(function() hudLabel:Remove() end) end
-    if AURA_PART then pcall(function() AURA_PART:Destroy() end) end
-    ScreenGui:Destroy()
-end)
-
--- drag panel
-local dragging, dragStart, startPos = false, nil, nil
-titleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-       or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = panel.Position
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-                     or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        panel.Position = UDim2.new(
-            startPos.X.Scale, startPos.X.Offset + delta.X,
-            startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-       or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
-    end
-end)
-
--- HUD above player
-local hudLabel = Drawing.new("Text")
-hudLabel.Size = 14
-hudLabel.Center = true
-hudLabel.Outline = true
-hudLabel.OutlineColor = Color3.new(0, 0, 0)
-hudLabel.Color = COLORS.hud
-hudLabel.Font = 2
-hudLabel.Visible = false
-
-RunService.RenderStepped:Connect(function()
-    if not STATE.SLAP_AURA then hudLabel.Visible = false return end
-    local cam = Workspace.CurrentCamera
-    local hrp = get_hrp()
-    if not (cam and hrp) then hudLabel.Visible = false return end
-    local sp, on = cam:WorldToViewportPoint(hrp.Position + Vector3.new(0, 3.5, 0))
-    if on then
-        local s = CONFIG.BASE_HITBOX * STATE.EXPANDER
-        hudLabel.Text = string.format("hitbox %dx  (%d studs)", STATE.EXPANDER, s)
-        hudLabel.Position = Vector2.new(sp.X, sp.Y)
-        hudLabel.Visible = true
-    else
-        hudLabel.Visible = false
-    end
-end)
+    LOOT_GEN = LOOT_GEN + 1
+    STATE.AUTO_LOOT = false
+    local hum = get_humanoid()
+    local hrp = get_
