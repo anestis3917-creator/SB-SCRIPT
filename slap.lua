@@ -1,12 +1,12 @@
--- slap.lua — loadstring entry (v7.1: fast-walk loot, cancelable, paced)
+-- slap.lua — loadstring entry (v7.2: fast-walk loot, cancelable, paced)
 -- usage: loadstring(game:HttpGet("URL_HERE"))()
 
 local CONFIG = {
     PROMPT_PARENT_PATTERNS = {
         "crate", "box", "loot", "barrel", "chest", "supply", "apple", "banana",
     },
-    ROYALE_MARKER_NAME = "SlapRoyale",       -- FILL
-    AURA_TEXTURE_ID    = "rbxassetid://0",    -- FILL
+    ROYALE_MARKER_NAME = "SlapRoyale",
+    AURA_TEXTURE_ID    = "rbxassetid://0",
     AURA_PARK_HEIGHT   = 5000,
     LOOT_COOLDOWN      = 3.0,
     LOOT_JITTER        = 0.5,
@@ -15,21 +15,20 @@ local CONFIG = {
     ARRIVE_DISTANCE    = 6,
     PRE_PROMPT_DELAY_MIN = 0.15,
     PRE_PROMPT_DELAY_MAX = 0.40,
-    LOOT_WALKSPEED     = 32,    -- boosted during loot; tweak higher/lower
+    LOOT_WALKSPEED     = 32,
     ESP_RANGE          = 2000,
     BASE_HITBOX        = 5,
     SLIDER_MAX         = 10,
 }
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local Workspace        = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
+local TweenService     = game:GetService("TweenService")
 local PathfindingService = game:GetService("PathfindingService")
 local LP = Players.LocalPlayer
 
--- ============================ STATE ============================
 local STATE = {
     AUTO_LOOT   = false,
     ESP_PLAYERS = false,
@@ -41,17 +40,16 @@ local STATE = {
 
 local AURA_PART = nil
 local LOOT_GEN  = 0
-local SAVED_WALKSPEED = nil   -- remembered while boosted
+local SAVED_WALKSPEED = nil
 
--- ============================ HELPERS ============================
 local function get_hrp()
-    local char = LP.Character
-    return char and char:FindFirstChild("HumanoidRootPart") or nil
+    local c = LP.Character
+    return c and c:FindFirstChild("HumanoidRootPart") or nil
 end
 
 local function get_humanoid()
-    local char = LP.Character
-    return char and char:FindFirstChildOfClass("Humanoid") or nil
+    local c = LP.Character
+    return c and c:FindFirstChildOfClass("Humanoid") or nil
 end
 
 local function boost_walkspeed()
@@ -77,9 +75,9 @@ local function in_royale()
 end
 
 local function matches(name)
-    local lower = name:lower()
-    for _, pat in ipairs(CONFIG.PROMPT_PARENT_PATTERNS) do
-        if lower:find(pat, 1, true) then return true end
+    local l = name:lower()
+    for _, p in ipairs(CONFIG.PROMPT_PARENT_PATTERNS) do
+        if l:find(p, 1, true) then return true end
     end
     return false
 end
@@ -91,7 +89,7 @@ local function prompt_part(prompt)
     return p:FindFirstChildWhichIsA("BasePart")
 end
 
--- ============================ HITBOX ============================
+-- hitbox
 local HITBOX_NAMES = { "Hitbox", "SlapHitbox", "Aura", "SlapAura", "Handle" }
 
 local function find_hitbox(char)
@@ -118,7 +116,7 @@ local function apply_expander()
     end
 end
 
--- ============================ ESP ============================
+-- esp
 local playerDrawings, itemDrawings = {}, {}
 
 local function new_text(color)
@@ -139,7 +137,6 @@ local function get_glove(p)
         p:FindFirstChild("EquippedGlove"),
         p:FindFirstChild("CurrentGlove"),
         p:FindFirstChild("leaderstats") and p.leaderstats:FindFirstChild("Glove"),
-        p:FindFirstChild("Hands") and p.Hands:FindFirstChild("Glove"),
     }
     for _, c in ipairs(candidates) do
         if c and (c:IsA("StringValue") or c:IsA("ValueBase")) then
@@ -161,36 +158,37 @@ local function update_player_esp()
     local my_hrp = get_hrp()
     local my_pos = my_hrp and my_hrp.Position
     for _, p in ipairs(Players:GetPlayers()) do
-        if p == LP then continue end
-        local char = p.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        local head = char and char:FindFirstChild("Head")
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        local vis = false
-        if hrp and head and hum and hum.Health > 0 then
-            local dist = my_pos and (hrp.Position - my_pos).Magnitude or 0
-            if dist <= CONFIG.ESP_RANGE then
-                local sp, on = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 2, 0))
-                if on then
-                    if not playerDrawings[p] then
-                        playerDrawings[p] = {
-                            name = new_text(Color3.fromRGB(255, 90, 90)),
-                            glove = new_text(Color3.fromRGB(255, 220, 80)),
-                        }
+        if p ~= LP then
+            local char = p.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local head = char and char:FindFirstChild("Head")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local vis = false
+            if hrp and head and hum and hum.Health > 0 then
+                local dist = my_pos and (hrp.Position - my_pos).Magnitude or 0
+                if dist <= CONFIG.ESP_RANGE then
+                    local sp, on = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 2, 0))
+                    if on then
+                        if not playerDrawings[p] then
+                            playerDrawings[p] = {
+                                name = new_text(Color3.fromRGB(255, 90, 90)),
+                                glove = new_text(Color3.fromRGB(255, 220, 80)),
+                            }
+                        end
+                        local d = playerDrawings[p]
+                        d.name.Text = p.Name
+                        d.name.Position = Vector2.new(sp.X, sp.Y)
+                        d.name.Visible = true
+                        d.glove.Text = "[" .. get_glove(p) .. "]"
+                        d.glove.Position = Vector2.new(sp.X, sp.Y + 18)
+                        d.glove.Visible = true
+                        vis = true
                     end
-                    local d = playerDrawings[p]
-                    d.name.Text = p.Name
-                    d.name.Position = Vector2.new(sp.X, sp.Y)
-                    d.name.Visible = true
-                    d.glove.Text = "[" .. get_glove(p) .. "]"
-                    d.glove.Position = Vector2.new(sp.X, sp.Y + 18)
-                    d.glove.Visible = true
-                    vis = true
                 end
             end
-        end
-        if not vis and playerDrawings[p] then
-            for _, o in pairs(playerDrawings[p]) do o.Visible = false end
+            if not vis and playerDrawings[p] then
+                for _, o in pairs(playerDrawings[p]) do o.Visible = false end
+            end
         end
     end
 end
@@ -202,29 +200,28 @@ local function update_item_esp()
     local my_pos = my_hrp and my_hrp.Position
     local seen = {}
     for _, obj in ipairs(Workspace:GetDescendants()) do
-        if not obj:IsA("ProximityPrompt") then continue end
-        if not obj.Parent then continue end
-        local lower = obj.Parent.Name:lower()
-        local hit = false
-        for _, pat in ipairs(CONFIG.PROMPT_PARENT_PATTERNS) do
-            if lower:find(pat, 1, true) then hit = true break end
+        if obj:IsA("ProximityPrompt") and obj.Parent then
+            if matches(obj.Parent.Name) then
+                local part = prompt_part(obj)
+                if part then
+                    local dist = my_pos and (part.Position - my_pos).Magnitude or 0
+                    if dist <= CONFIG.ESP_RANGE then
+                        local sp, on = cam:WorldToViewportPoint(part.Position + Vector3.new(0, 2, 0))
+                        if on then
+                            seen[obj] = true
+                            if not itemDrawings[obj] then
+                                itemDrawings[obj] = { label = new_text(Color3.fromRGB(90, 255, 130)) }
+                            end
+                            local d = itemDrawings[obj]
+                            local n = obj.Parent.Name:gsub("%d+$", ""):gsub("_", " ")
+                            d.label.Text = n
+                            d.label.Position = Vector2.new(sp.X, sp.Y)
+                            d.label.Visible = true
+                        end
+                    end
+                end
+            end
         end
-        if not hit then continue end
-        local part = prompt_part(obj)
-        if not part then continue end
-        local dist = my_pos and (part.Position - my_pos).Magnitude or 0
-        if dist > CONFIG.ESP_RANGE then continue end
-        local sp, on = cam:WorldToViewportPoint(part.Position + Vector3.new(0, 2, 0))
-        if not on then continue end
-        seen[obj] = true
-        if not itemDrawings[obj] then
-            itemDrawings[obj] = { label = new_text(Color3.fromRGB(90, 255, 130)) }
-        end
-        local d = itemDrawings[obj]
-        local n = obj.Parent.Name:gsub("%d+$", ""):gsub("_", " ")
-        d.label.Text = n
-        d.label.Position = Vector2.new(sp.X, sp.Y)
-        d.label.Visible = true
     end
     for obj, d in pairs(itemDrawings) do
         if not seen[obj] or not obj.Parent then
@@ -234,19 +231,20 @@ local function update_item_esp()
     end
 end
 
--- ============================ LOOT ============================
+-- loot
 local function nearest_prompt()
     local hrp = get_hrp()
     if not hrp then return nil end
     local my_pos = hrp.Position
     local best, best_dist = nil, CONFIG.LOOT_RANGE
     for _, obj in ipairs(Workspace:GetDescendants()) do
-        if not obj:IsA("ProximityPrompt") then continue end
-        if not obj.Parent or not matches(obj.Parent.Name) then continue end
-        local part = prompt_part(obj)
-        if not part then continue end
-        local d = (part.Position - my_pos).Magnitude
-        if d < best_dist then best_dist = d best = obj end
+        if obj:IsA("ProximityPrompt") and obj.Parent and matches(obj.Parent.Name) then
+            local part = prompt_part(obj)
+            if part then
+                local d = (part.Position - my_pos).Magnitude
+                if d < best_dist then best_dist = d best = obj end
+            end
+        end
     end
     return best, best_dist
 end
@@ -276,28 +274,28 @@ local function walk_to(part, gen)
                 restore_walkspeed()
                 return false
             end
-            local d = (hrp.Position - part.Position).Magnitude
-            if d <= CONFIG.ARRIVE_DISTANCE then return true end
+            if (hrp.Position - part.Position).Magnitude <= CONFIG.ARRIVE_DISTANCE then
+                return true
+            end
             task.wait(0.05)
         end
         return false
     end
 
-    local waypoints = path:GetWaypoints()
-    for i = 2, #waypoints do
+    for i = 2, #path:GetWaypoints() do
         if gen ~= LOOT_GEN or not STATE.AUTO_LOOT then
             hum:MoveTo(hrp.Position)
             restore_walkspeed()
             return false
         end
-        local wp = waypoints[i]
+        local wp = path:GetWaypoints()[i]
         if wp.Action == Enum.PathWaypointAction.Jump then
             hum.Jump = true
         end
         hum:MoveTo(wp.Position)
         local t0 = tick()
         local reached = false
-        while (tick() - t0) < CONFIG.WALK_TIMEOUT / math.max(1, #waypoints) do
+        while (tick() - t0) < CONFIG.WALK_TIMEOUT / math.max(1, #path:GetWaypoints()) do
             if gen ~= LOOT_GEN or not STATE.AUTO_LOOT then
                 hum:MoveTo(hrp.Position)
                 restore_walkspeed()
@@ -317,9 +315,8 @@ end
 
 local function loot_cycle()
     local my_gen = LOOT_GEN
-    local prompt, _ = nearest_prompt()
+    local prompt = nearest_prompt()
     if not prompt then return false end
-
     local part = prompt_part(prompt)
     if not part then return false end
 
@@ -333,7 +330,6 @@ local function loot_cycle()
         return false
     end
 
-    -- arrived: back to normal speed, then a small human pause
     restore_walkspeed()
 
     local pre = CONFIG.PRE_PROMPT_DELAY_MIN
@@ -357,22 +353,22 @@ end
 
 task.spawn(function()
     while task.wait(0.5) do
-        if not STATE.AUTO_LOOT or not in_royale() then continue end
+        if STATE.AUTO_LOOT and in_royale() then
+            pcall(loot_cycle)
+            restore_walkspeed()
 
-        pcall(loot_cycle)
-        restore_walkspeed()   -- safety net; never leave boosted
-
-        local wait_for = CONFIG.LOOT_COOLDOWN
-            + (math.random() * 2 - 1) * CONFIG.LOOT_JITTER
-        local t0 = tick()
-        while (tick() - t0) < wait_for do
-            if not STATE.AUTO_LOOT then break end
-            task.wait(0.1)
+            local wait_for = CONFIG.LOOT_COOLDOWN
+                + (math.random() * 2 - 1) * CONFIG.LOOT_JITTER
+            local t0 = tick()
+            while (tick() - t0) < wait_for do
+                if not STATE.AUTO_LOOT then break end
+                task.wait(0.1)
+            end
         end
     end
 end)
 
--- ============================ AURA ============================
+-- aura
 local function make_aura()
     if AURA_PART then return end
     local part = Instance.new("Part")
@@ -419,7 +415,7 @@ RunService.RenderStepped:Connect(function()
     if STATE.SLAP_AURA then pcall(apply_expander) end
 end)
 
--- ============================ UI ============================
+-- UI
 local COLORS = {
     bg       = Color3.fromRGB(18, 18, 22),
     panel    = Color3.fromRGB(26, 26, 32),
@@ -733,7 +729,6 @@ local function slider_row(text, min, max, initial, callback)
     return api
 end
 
--- ---- build UI ----
 section("COMBAT")
 
 local slapAuraApi
@@ -815,4 +810,19 @@ closeBtn.MouseButton1Click:Connect(function()
     LOOT_GEN = LOOT_GEN + 1
     STATE.AUTO_LOOT = false
     local hum = get_humanoid()
-    local hrp = get_
+    local hrp = get_hrp()
+    if hum and hrp then hum:MoveTo(hrp.Position) end
+    restore_walkspeed()
+    for _, d in pairs(playerDrawings) do
+        for _, o in pairs(d) do pcall(function() o:Remove() end) end
+    end
+    for _, d in pairs(itemDrawings) do
+        for _, o in pairs(d) do pcall(function() o:Remove() end) end
+    end
+    if AURA_PART then pcall(function() AURA_PART:Destroy() end) end
+    ScreenGui:Destroy()
+end)
+
+local dragging, dragStart, startPos = false, nil, nil
+titleBar.InputBegan:Connect(function(input)
+   
