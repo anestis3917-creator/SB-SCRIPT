@@ -395,3 +395,107 @@ local function slider_row(text, min, max, initial, callback)
 end
 
 print("v8: widgets defined")
+
+
+-- ============================ sections ============================
+section("COMBAT")
+
+local slapAuraApi
+toggle_row("Slap Aura", "SLAP_AURA", function(v)
+    if v then
+        if slapAuraApi then slapAuraApi.set_locked(false) end
+        apply_expander()
+    else
+        if slapAuraApi then slapAuraApi.set_locked(true) slapAuraApi.reset(1) end
+        STATE.EXPANDER = 1
+        apply_expander()
+    end
+end)
+
+slapAuraApi = slider_row("Hitbox Expander", 1, CONFIG.SLIDER_MAX, 1, function(v)
+    STATE.EXPANDER = v
+    apply_expander()
+end)
+slapAuraApi.set_locked(true)
+
+section("LOOT")
+
+local lootToggle
+lootToggle = toggle_row("Auto Loot  (walk + collect)", "AUTO_LOOT")
+
+action_row("Stop Looting", function()
+    LOOT_GEN = LOOT_GEN + 1
+    STATE.AUTO_LOOT = false
+    if lootToggle then lootToggle.set(false) end
+    local hum = get_humanoid()
+    local hrp = get_hrp()
+    if hum and hrp then hum:MoveTo(hrp.Position) end
+    restore_walkspeed()
+end, true)
+
+section("ESP")
+
+toggle_row("Player ESP  (name + glove)", "ESP_PLAYERS")
+toggle_row("Item ESP  (name label)",      "ESP_ITEMS")
+
+section("MISC")
+
+toggle_row("Hide Aura Above Lobby", "HIDE_AURA")
+toggle_row("Hide Above Waiting Lobby", "HIDE_LOBBY")
+
+print("v8: sections built")
+
+-- ============================ minimize & drag ============================
+local minimized = false
+local fullSize = panel.Size
+minBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        content.Visible = false
+        panel.Size = UDim2.new(0, 260, 0, 34)
+    else
+        content.Visible = true
+        panel.Size = fullSize
+    end
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+    LOOT_GEN = LOOT_GEN + 1
+    STATE.AUTO_LOOT = false
+    restore_walkspeed()
+    for _, d in pairs(playerDrawings or {}) do
+        for _, o in pairs(d) do pcall(function() o:Remove() end) end
+    end
+    for _, d in pairs(itemDrawings or {}) do
+        for _, o in pairs(d) do pcall(function() o:Remove() end) end
+    end
+    if AURA_PART then pcall(function() AURA_PART:Destroy() end) end
+    ScreenGui:Destroy()
+end)
+
+local dragging, dragStart, startPos = false, nil, nil
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+       or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = panel.Position
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+                     or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        panel.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+       or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+print("v8: panel wired")
