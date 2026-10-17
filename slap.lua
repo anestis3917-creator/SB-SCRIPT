@@ -561,6 +561,72 @@ local function update_item_esp()
                     
                     local sp, on = cam:WorldToViewportPoint(handle.Position)
                     if on then
+                        local nameLower = tool.Name:lower()
+                        local col = CONFIG.ITEM_RARITY[nameLower] or CONFIG.DEFAULT_ITEM_COLOR
+                        
+                        seen[tool] = true
+                        
+                        if not itemDrawings[tool] then
+                            local l = new_text(col)
+                            l.Size = 14
+                            local b = new_box(col)
+                            b.Thickness = 2
+                            itemDrawings[tool] = { label = l, box = b }
+                        end
+                        
+                        local d = itemDrawings[tool]
+                        
+                        -- Force color update every frame
+                        d.label.Color = col
+                        d.box.Color = col
+                        
+                        local cf = handle.CFrame
+                        local size = handle.Size
+                        local half = size / 2
+                        
+                        local posTop = cf * CFrame.new(0, half.Y, 0)
+                        local posBot = cf * CFrame.new(0, -half.Y, 0)
+                        
+                        local spTop, onTop = cam:WorldToViewportPoint(posTop.Position)
+                        local spBot, onBot = cam:WorldToViewportPoint(posBot.Position)
+                        
+                        if onTop and onBot then
+                            local h = math.abs(spBot.Y - spTop.Y)
+                            local w = h * 0.8
+                            local boxTop = math.min(spTop.Y, spBot.Y)
+                            
+                            d.box.Size = Vector2.new(w, h)
+                            d.box.Position = Vector2.new(spTop.X - w/2, boxTop)
+                            d.box.Visible = true
+                            
+                            d.label.Text = tool.Name
+                            d.label.Position = Vector2.new(spTop.X, boxTop - 16)
+                            d.label.Visible = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    for tool, d in pairs(itemDrawings) do
+        if not seen[tool] or not tool.Parent then
+            if d.label then pcall(function() d.label:Remove() end) end
+            if d.box then pcall(function() d.box:Remove() end) end
+            itemDrawings[tool] = nil
+        end
+    end
+end
+    local seen = {}
+    
+    for _, tool in ipairs(folder:GetChildren()) do
+        if tool:IsA("Tool") then
+            local handle = tool:FindFirstChild("Handle")
+            if handle and handle:IsA("BasePart") then
+                local dist = (handle.Position - my_pos).Magnitude
+                if dist <= CONFIG.ESP_RANGE then
+                    
+                    local sp, on = cam:WorldToViewportPoint(handle.Position)
+                    if on then
                         local col = item_color(tool.Name)
                         seen[tool] = true
                         
