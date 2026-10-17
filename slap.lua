@@ -1,4 +1,4 @@
--- slap.lua — v8 (UI-first, defensive, feature-complete)
+-- slap.lua — v8.1 (bus-gated Auto Loot, teleport loot)
 -- usage: loadstring(game:HttpGet("URL?v="..tick()))()
 
 local Players = game:GetService("Players")
@@ -14,14 +14,12 @@ local CONFIG = {
         "crate", "box", "loot", "barrel", "chest", "supply", "apple", "banana",
     },
     ROYALE_MARKER_NAME = "Arena",
+    BUS_MARKER_NAME    = "BusModel",
     AURA_TEXTURE_ID    = "rbxassetid://0",
     AURA_PARK_HEIGHT   = 5000,
     LOOT_COOLDOWN      = 3.0,
     LOOT_JITTER        = 0.5,
     LOOT_RANGE         = 500,
-    WALK_TIMEOUT       = 8.0,
-    ARRIVE_DISTANCE    = 6,
-    LOOT_WALKSPEED     = 32,
     ESP_RANGE          = 2000,
     BASE_HITBOX        = 5,
     SLIDER_MAX         = 10,
@@ -37,19 +35,9 @@ local STATE = {
     EXPANDER    = 1,
 }
 
-local BUS_MARKER_NAME = "BusModel"
-local IN_BUS = false
-local function detect_bus()
-    local bus = Workspace:FindFirstChild(BUS_MARKER_NAME)
-    IN_BUS = bus ~= nil
-    return IN_BUS
-end
-
 local AURA_PART = nil
 local LOOT_GEN  = 0
-local SAVED_WALKSPEED = nil
 
--- ============================ helpers ============================
 local function get_hrp()
     local c = LP.Character
     return c and c:FindFirstChild("HumanoidRootPart") or nil
@@ -60,20 +48,8 @@ local function get_humanoid()
     return c and c:FindFirstChildOfClass("Humanoid") or nil
 end
 
-local function boost_walkspeed()
-    local hum = get_humanoid()
-    if not hum then return end
-    if SAVED_WALKSPEED == nil then SAVED_WALKSPEED = hum.WalkSpeed end
-    hum.WalkSpeed = CONFIG.LOOT_WALKSPEED
-end
-
-local function restore_walkspeed()
-    local hum = get_humanoid()
-    if not hum then SAVED_WALKSPEED = nil return end
-    if SAVED_WALKSPEED ~= nil then
-        hum.WalkSpeed = SAVED_WALKSPEED
-        SAVED_WALKSPEED = nil
-    end
+local function detect_bus()
+    return Workspace:FindFirstChild(CONFIG.BUS_MARKER_NAME) ~= nil
 end
 
 local function matches(name)
@@ -113,12 +89,10 @@ local function apply_expander()
     hb.Massless = true
 end
 
--- ============================ UI (BUILT FIRST) ============================
 local COLORS = {
     bg       = Color3.fromRGB(18, 18, 22),
     panel    = Color3.fromRGB(26, 26, 32),
     row      = Color3.fromRGB(36, 36, 44),
-    rowHov   = Color3.fromRGB(46, 46, 56),
     accent   = Color3.fromRGB(0, 200, 120),
     accentOff= Color3.fromRGB(60, 60, 70),
     text     = Color3.fromRGB(230, 230, 235),
@@ -198,9 +172,6 @@ layout.Padding = UDim.new(0, 6)
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Parent = content
 
-print("v8: UI shell built")
-
--- ============================ widgets ============================
 local function section(text)
     local h = Instance.new("TextLabel")
     h.Size = UDim2.new(1, -8, 0, 22)
@@ -270,10 +241,6 @@ local function toggle_row(text, key, callback)
         set(not on)
         if not on and key == "AUTO_LOOT" then
             LOOT_GEN = LOOT_GEN + 1
-            local hum = get_humanoid()
-            local hrp = get_hrp()
-            if hum and hrp then hum:MoveTo(hrp.Position) end
-            restore_walkspeed()
         end
     end)
     return { row = row, set = set, get = function() return on end }
@@ -402,108 +369,4 @@ local function slider_row(text, min, max, initial, callback)
     return api
 end
 
-print("v8: widgets defined")
-
-
--- ============================ sections ============================
-section("COMBAT")
-
-local slapAuraApi
-toggle_row("Slap Aura", "SLAP_AURA", function(v)
-    if v then
-        if slapAuraApi then slapAuraApi.set_locked(false) end
-        apply_expander()
-    else
-        if slapAuraApi then slapAuraApi.set_locked(true) slapAuraApi.reset(1) end
-        STATE.EXPANDER = 1
-        apply_expander()
-    end
-end)
-
-slapAuraApi = slider_row("Hitbox Expander", 1, CONFIG.SLIDER_MAX, 1, function(v)
-    STATE.EXPANDER = v
-    apply_expander()
-end)
-slapAuraApi.set_locked(true)
-
-section("LOOT")
-
-local lootToggle
-lootToggle = toggle_row("Auto Loot  (walk + collect)", "AUTO_LOOT")
-
-action_row("Stop Looting", function()
-    LOOT_GEN = LOOT_GEN + 1
-    STATE.AUTO_LOOT = false
-    if lootToggle then lootToggle.set(false) end
-    local hum = get_humanoid()
-    local hrp = get_hrp()
-    if hum and hrp then hum:MoveTo(hrp.Position) end
-    restore_walkspeed()
-end, true)
-
-section("ESP")
-
-toggle_row("Player ESP  (name + glove)", "ESP_PLAYERS")
-toggle_row("Item ESP  (name label)",      "ESP_ITEMS")
-
-section("MISC")
-
-toggle_row("Hide Aura Above Lobby", "HIDE_AURA")
-toggle_row("Hide Above Waiting Lobby", "HIDE_LOBBY")
-
-print("v8: sections built")
-
--- ============================ minimize & drag ============================
-local minimized = false
-local fullSize = panel.Size
-minBtn.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    if minimized then
-        content.Visible = false
-        panel.Size = UDim2.new(0, 260, 0, 34)
-    else
-        content.Visible = true
-        panel.Size = fullSize
-    end
-end)
-
-closeBtn.MouseButton1Click:Connect(function()
-    LOOT_GEN = LOOT_GEN + 1
-    STATE.AUTO_LOOT = false
-    restore_walkspeed()
-    for _, d in pairs(playerDrawings or {}) do
-        for _, o in pairs(d) do pcall(function() o:Remove() end) end
-    end
-    for _, d in pairs(itemDrawings or {}) do
-        for _, o in pairs(d) do pcall(function() o:Remove() end) end
-    end
-    if AURA_PART then pcall(function() AURA_PART:Destroy() end) end
-    ScreenGui:Destroy()
-end)
-
-local dragging, dragStart, startPos = false, nil, nil
-titleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-       or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = panel.Position
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-                     or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        panel.Position = UDim2.new(
-            startPos.X.Scale, startPos.X.Offset + delta.X,
-            startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-       or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
-    end
-end)
-
-print("v8: panel wired")
+print("v8.1: widgets ready")
