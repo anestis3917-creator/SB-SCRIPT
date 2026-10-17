@@ -370,3 +370,305 @@ local function slider_row(text, min, max, initial, callback)
 end
 
 print("v8.1: widgets ready")
+
+
+section("COMBAT")
+
+local slapAuraApi
+toggle_row("Slap Aura", "SLAP_AURA", function(v)
+    if v then
+        if slapAuraApi then slapAuraApi.set_locked(false) end
+        apply_expander()
+    else
+        if slapAuraApi then slapAuraApi.set_locked(true) slapAuraApi.reset(1) end
+        STATE.EXPANDER = 1
+        apply_expander()
+    end
+end)
+
+slapAuraApi = slider_row("Hitbox Expander", 1, CONFIG.SLIDER_MAX, 1, function(v)
+    STATE.EXPANDER = v
+    apply_expander()
+end)
+slapAuraApi.set_locked(true)
+
+section("LOOT")
+
+local lootToggle
+lootToggle = toggle_row("Auto Loot  (teleport + collect)", "AUTO_LOOT")
+
+local lootRow = lootToggle.row
+local lootBtn = lootRow:FindFirstChildOfClass("TextButton")
+local lootLbl = lootRow:FindFirstChildOfClass("TextLabel")
+local lootLocked = true
+
+local function set_loot_locked(v)
+    lootLocked = v
+    if lootBtn then lootBtn.Active = not v lootBtn.AutoButtonColor = not v end
+    if lootLbl then lootLbl.TextTransparency = v and 0.5 or 0 end
+end
+set_loot_locked(true)
+
+task.spawn(function()
+    while task.wait(0.25) do
+        local now = detect_bus()
+        if now and lootLocked then
+            set_loot_locked(false)
+        elseif not now and not lootLocked then
+            set_loot_locked(true)
+            if STATE.AUTO_LOOT then
+                lootToggle.set(false)
+                LOOT_GEN = LOOT_GEN + 1
+            end
+        end
+    end
+end)
+
+action_row("Stop Looting", function()
+    LOOT_GEN = LOOT_GEN + 1
+    STATE.AUTO_LOOT = false
+    if lootToggle then lootToggle.set(false) end
+end, true)
+
+section("ESP")
+toggle_row("Player ESP  (name + glove)", "ESP_PLAYERS")
+toggle_row("Item ESP  (name label)",      "ESP_ITEMS")
+
+section("MISC")
+toggle_row("Hide Aura Above Lobby", "HIDE_AURA")
+toggle_row("Hide Above Waiting Lobby", "HIDE_LOBBY")
+
+print("v8.1: sections built")
+
+-- ============================ ESP engine ============================
+local playerDrawings, itemDrawings = {}, {}
+
+local function new_text(color)
+    local t = Drawing.new("Text")
+    t.Size = 16
+    t.Center = true
+    t.Outline = true
+    t.OutlineColor = Color3.new(0, 0, 0)
+    t.Font = 2
+    t.Color = color
+    t.Visible = false
+    return t
+end
+
+local function get_glove(p)
+    local candidates = {
+        p:FindFirstChild("Glove"),
+        p:FindFirstChild("EquippedGlove"),
+        p:FindFirstChild("CurrentGlove"),
+        p:FindFirstChild("leaderstats") and p.leaderstats:FindFirstChild("Glove"),
+    }
+    for _, c in ipairs(candidates) do
+        if c and (c:IsA("StringValue") or c:IsA("ValueBase")) then
+            return tostring(c.Value)
+        end
+    end
+    local char = p.Character
+    if char then
+        for _, c in ipairs(char:GetChildren()) do
+            if c:IsA("Tool") then return c.Name end
+        end
+    end
+    return "?"
+end
+
+local function update_player_esp()
+    local cam = Workspace.CurrentCamera
+    if not cam then return end
+    local my_hrp = get_hrp()
+    local my_pos = my_hrp and my_hrp.Position
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP then
+            local char = p.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local head = char and char:FindFirstChild("Head")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local vis = false
+            if hrp and head and hum and hum.Health > 0 then
+                local dist = my_pos and (hrp.Position - my_pos).Magnitude or 0
+                if dist <= CONFIG.ESP_RANGE then
+                    local sp, on = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 2, 0))
+                    if on then
+                        if not playerDrawings[p] then
+                            playerDrawings[p] = {
+                                name = new_text(Color3.fromRGB(255, 90, 90)),
+                                glove = new_text(Color3.fromRGB(255, 220, 80)),
+                            }
+                        end
+                        local d = playerDrawings[p]
+                        d.name.Text = p.Name
+                        d.name.Position = Vector2.new(sp.X, sp.Y)
+                        d.name.Visible = true
+                        d.glove.Text = "[" .. get_glove(p) .. "]"
+                        d.glove.Position = Vector2.new(sp.X, sp.Y + 18)
+                        d.glove.Visible = true
+                        vis = true
+                    end
+                end
+            end
+            if not vis and playerDrawings[p] then
+                for _, o in pairs(playerDrawings[p]) do o.Visible = false end
+            end
+        end
+    end
+end
+
+local function update_item_esp()
+    local cam = Workspace.CurrentCamera
+    if not cam then return end
+    local my_hrp = get_hrp()
+    local my_pos = my_hrp and my_hrp.Position
+    local seen = {}
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.Parent and matches(obj.Parent.Name) then
+            local part = prompt_part(obj)
+            if part then
+                local dist = my_pos and (part.Position - my_pos).Magnitude or 0
+                if dist <= CONFIG.ESP_RANGE then
+                    local sp, on = cam:WorldToViewportPoint(part.Position + Vector3.new(0, 2, 0))
+                    if on then
+                        seen[obj] = true
+                        if not itemDrawings[obj] then
+                            itemDrawings[obj] = { label = new_text(Color3.fromRGB(90, 255, 130)) }
+                        end
+                        local d = itemDrawings[obj]
+                        local n = obj.Parent.Name:gsub("%d+$", ""):gsub("_", " ")
+                        d.label.Text = n
+                        d.label.Position = Vector2.new(sp.X, sp.Y)
+                        d.label.Visible = true
+                    end
+                end
+            end
+        end
+    end
+    for obj, d in pairs(itemDrawings) do
+        if not seen[obj] or not obj.Parent then
+            for _, o in pairs(d) do pcall(function() o:Remove() end) end
+            itemDrawings[obj] = nil
+        end
+    end
+end
+
+-- ============================ teleport loot ============================
+local function nearest_prompt()
+    local hrp = get_hrp()
+    if not hrp then return nil end
+    local my_pos = hrp.Position
+    local best, best_dist = nil, CONFIG.LOOT_RANGE
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.Parent and matches(obj.Parent.Name) then
+            local part = prompt_part(obj)
+            if part then
+                local d = (part.Position - my_pos).Magnitude
+                if d < best_dist then best_dist = d best = obj end
+            end
+        end
+    end
+    return best, best_dist
+end
+
+local function loot_cycle()
+    local my_gen = LOOT_GEN
+    local prompt = nearest_prompt()
+    if not prompt then return false end
+    local part = prompt_part(prompt)
+    if not part then return false end
+
+    local char = LP.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    local target = part.Position + Vector3.new(0, 3, 0)
+    local ok = pcall(function()
+        char:PivotTo(CFrame.new(target))
+    end)
+    if not ok then return false end
+
+    task.wait(0.15 + math.random() * 0.2)
+    if my_gen ~= LOOT_GEN or not STATE.AUTO_LOOT then return false end
+
+    if prompt.Parent then
+        pcall(function()
+            prompt.RequiresLineOfSight = false
+            prompt.MaxActivationDistance = 9e9
+        end)
+        pcall(function()
+            prompt:InputHoldBegin()
+            task.wait(prompt.HoldDuration + 0.05)
+            prompt:InputHoldEnd()
+        end)
+    end
+    return true
+end
+
+task.spawn(function()
+    while task.wait(0.5) do
+        if STATE.AUTO_LOOT and detect_bus() == false then
+            pcall(loot_cycle)
+            local wait_for = CONFIG.LOOT_COOLDOWN
+                + (math.random() * 2 - 1) * CONFIG.LOOT_JITTER
+            local t0 = tick()
+            while (tick() - t0) < wait_for do
+                if not STATE.AUTO_LOOT then break end
+                task.wait(0.1)
+            end
+        end
+    end
+end)
+
+-- ============================ aura ============================
+local function make_aura()
+    if AURA_PART then return end
+    local part = Instance.new("Part")
+    part.Size = Vector3.new(2, 2, 2)
+    part.Anchored = true
+    part.CanCollide = false
+    part.Transparency = 1
+    part.Name = "_oll_aura_anchor"
+    part.Parent = Workspace
+    local att = Instance.new("Attachment")
+    att.Parent = part
+    local aura = Instance.new("ParticleEmitter")
+    aura.Texture = CONFIG.AURA_TEXTURE_ID
+    aura.Rate = 20
+    aura.Lifetime = NumberRange.new(0.5)
+    aura.Speed = NumberRange.new(0)
+    aura.Parent = att
+    AURA_PART = part
+end
+
+local function park_aura()
+    if AURA_PART then AURA_PART.CFrame = CFrame.new(0, CONFIG.AURA_PARK_HEIGHT, 0) end
+end
+
+local function follow_aura()
+    if not AURA_PART then return end
+    local hrp = get_hrp()
+    if hrp then AURA_PART.CFrame = hrp.CFrame end
+end
+
+RunService.RenderStepped:Connect(function()
+    if STATE.ESP_PLAYERS then pcall(update_player_esp) end
+    if STATE.ESP_ITEMS   then pcall(update_item_esp) end
+    if STATE.HIDE_AURA or STATE.HIDE_LOBBY then
+        make_aura()
+        if STATE.HIDE_LOBBY then
+            park_aura()
+        elseif STATE.HIDE_AURA then
+            local inMatch = workspace:FindFirstChild(CONFIG.ROYALE_MARKER_NAME) ~= nil
+            if inMatch then follow_aura() else park_aura() end
+        end
+    end
+    if STATE.SLAP_AURA then pcall(apply_expander) end
+end)
+
+LP.CharacterAdded:Connect(function()
+    task.wait(1)
+    if STATE.SLAP_AURA then apply_expander() end
+end)
+
+print("v8.1: features live")
