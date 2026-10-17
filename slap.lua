@@ -442,6 +442,8 @@ print("v8.1: sections built")
 
 -- ============================ ESP engine ============================
 local playerDrawings, itemDrawings = {}, {}
+local gloveCache = {}
+local itemScanAccum = 0
 
 local function new_text(color)
     local t = Drawing.new("Text")
@@ -456,26 +458,31 @@ local function new_text(color)
 end
 
 local function get_glove(p)
+    if gloveCache[p] then return gloveCache[p] end
     local candidates = {
         p:FindFirstChild("Glove"),
         p:FindFirstChild("EquippedGlove"),
         p:FindFirstChild("CurrentGlove"),
         p:FindFirstChild("leaderstats") and p.leaderstats:FindFirstChild("Glove"),
     }
+    local result = "?"
     for _, c in ipairs(candidates) do
         if c and (c:IsA("StringValue") or c:IsA("ValueBase")) then
-            return tostring(c.Value)
+            result = tostring(c.Value)
+            break
         end
     end
-    local char = p.Character
-    if char then
-        for _, c in ipairs(char:GetChildren()) do
-            if c:IsA("Tool") then return c.Name end
+    if result == "?" then
+        local char = p.Character
+        if char then
+            for _, c in ipairs(char:GetChildren()) do
+                if c:IsA("Tool") then result = c.Name break end
+            end
         end
     end
-    return "?"
+    gloveCache[p] = result
+    return result
 end
-
 local function update_player_esp()
     local cam = Workspace.CurrentCamera
     if not cam then return end
@@ -653,7 +660,15 @@ end
 
 RunService.RenderStepped:Connect(function()
     if STATE.ESP_PLAYERS then pcall(update_player_esp) end
-    if STATE.ESP_ITEMS   then pcall(update_item_esp) end
+
+    if STATE.ESP_ITEMS then
+        itemScanAccum = itemScanAccum + 1
+        if itemScanAccum >= 30 then
+            itemScanAccum = 0
+            pcall(update_item_esp)
+        end
+    end
+
     if STATE.HIDE_AURA or STATE.HIDE_LOBBY then
         make_aura()
         if STATE.HIDE_LOBBY then
@@ -663,12 +678,18 @@ RunService.RenderStepped:Connect(function()
             if inMatch then follow_aura() else park_aura() end
         end
     end
+
     if STATE.SLAP_AURA then pcall(apply_expander) end
 end)
 
 LP.CharacterAdded:Connect(function()
+    gloveCache[LP] = nil
     task.wait(1)
     if STATE.SLAP_AURA then apply_expander() end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    gloveCache[p] = nil
 end)
 
 print("v8.1: features live")
