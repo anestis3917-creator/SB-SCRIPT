@@ -128,8 +128,8 @@ local function slap_aura_step()
     if not myHrp then return end
 
     local ring = build_ring()
-    ring.CFrame = myHrp.CFrame * CFrame.new(0, -2.5, 0) * CFrame.Angles(0, 0, math.rad(90))
-    ring.Size = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
+      ring.CFrame = CFrame.new(myHrp.Position.X, 1, myHrp.Position.Z)
+        ring.Size = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
     local now = tick()
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LP and p.Character then
