@@ -1,4 +1,4 @@
--- slap.lua — v8.2 (Tool-based loot, fixed ESP, fixed panel)
+-- slap.lua — v8.3 (Tool-based loot, rarity-colored item ESP, fixed panel)
 -- usage: loadstring(game:HttpGet("URL?v="..tick()))()
 
 local Players = game:GetService("Players")
@@ -16,9 +16,21 @@ local CONFIG = {
     LOOT_COOLDOWN      = 3.0,
     LOOT_JITTER        = 0.5,
     LOOT_RANGE         = 500,
-    ESP_RANGE          = 2000,
+    ESP_RANGE          = 5000,
     BASE_HITBOX        = 5,
     SLIDER_MAX         = 10,
+    DEFAULT_ITEM_COLOR = Color3.fromRGB(90, 255, 130),
+    ITEM_RARITY = {
+        ["apple"]           = Color3.fromRGB(80, 255, 100),
+        ["banana"]          = Color3.fromRGB(255, 230, 60),
+        ["boba"]            = Color3.fromRGB(80, 160, 255),
+        ["bandage"]         = Color3.fromRGB(255, 255, 255),
+        ["first aid kit"]   = Color3.fromRGB(255, 120, 120),
+        ["frog potion"]     = Color3.fromRGB(120, 255, 120),
+        ["bull's essence"]  = Color3.fromRGB(255, 90, 90),
+        ["tomahawk"]        = Color3.fromRGB(200, 200, 200),
+        ["pack-a-punch"]    = Color3.fromRGB(255, 160, 255),
+    },
 }
 
 local STATE = {
@@ -159,7 +171,6 @@ layout.Padding = UDim.new(0, 6)
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Parent = content
 
--- drag
 local dragStart, startPos
 titleBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
@@ -269,8 +280,6 @@ local function action_row(text, callback, danger)
     Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
     row.MouseButton1Click:Connect(callback)
 end
-
-
 local function slider_row(text, min, max, initial, callback)
     local row = Instance.new("Frame")
     row.Size = UDim2.new(1, -8, 0, 54)
@@ -447,7 +456,7 @@ section("MISC")
 toggle_row("Hide Aura Above Lobby", "HIDE_AURA")
 toggle_row("Hide Above Waiting Lobby", "HIDE_LOBBY")
 
-print("v8.2: sections built")
+print("v8.3: sections built")
 
 local function new_text(color)
     local t = Drawing.new("Text")
@@ -538,6 +547,11 @@ local function update_player_esp()
     end
 end
 
+local function item_color(name)
+    local lower = name:lower()
+    return CONFIG.ITEM_RARITY[lower] or CONFIG.DEFAULT_ITEM_COLOR
+end
+
 local function update_item_esp()
     local cam = Workspace.CurrentCamera
     if not cam then return end
@@ -558,20 +572,23 @@ local function update_item_esp()
             local handle = tool:FindFirstChild("Handle")
             if handle and handle:IsA("BasePart") then
                 local dist = (handle.Position - my_pos).Magnitude
-                if dist <= 500 then
+                if dist <= CONFIG.ESP_RANGE then
                     local sp, on = cam:WorldToViewportPoint(handle.Position + Vector3.new(0, 2, 0))
                     if on then
+                        local col = item_color(tool.Name)
                         seen[tool] = true
                         if not itemDrawings[tool] then
                             itemDrawings[tool] = {
-                                label = new_text(Color3.fromRGB(90, 255, 130)),
-                                box = new_box(Color3.fromRGB(90, 255, 130)),
+                                label = new_text(col),
+                                box = new_box(col),
                             }
                         end
                         local d = itemDrawings[tool]
-                        local spTop, onTop = cam:WorldToViewportPoint(handle.Position + Vector3.new(0, 2.5, 0))
-                        local spBot, onBot = cam:WorldToViewportPoint(handle.Position - Vector3.new(0, 2.5, 0))
-                        if onTop and onBot then
+                        d.label.Color = col
+                        d.box.Color = col
+                        local spTop = cam:WorldToViewportPoint(handle.Position + Vector3.new(0, 2.5, 0))
+                        local spBot = cam:WorldToViewportPoint(handle.Position - Vector3.new(0, 2.5, 0))
+                        if spTop and spBot then
                             local h = math.abs(spBot.Y - spTop.Y)
                             local w = h * 0.7
                             d.box.Size = Vector2.new(w, h)
@@ -681,7 +698,7 @@ RunService.RenderStepped:Connect(function()
 
     if STATE.ESP_ITEMS then
         itemScanAccum = itemScanAccum + 1
-        if itemScanAccum >= 30 then
+        if itemScanAccum >= 15 then
             itemScanAccum = 0
             pcall(update_item_esp)
         end
@@ -729,5 +746,6 @@ Players.PlayerRemoving:Connect(function(p)
     gloveCache[p] = nil
 end)
 
-print("v8.2: features live")
-print("v8.2: widgets ready")
+print("v8.3: features live")
+
+print("v8.3: widgets ready")
