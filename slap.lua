@@ -128,7 +128,7 @@ local function slap_aura_step()
     if not myHrp then return end
 
     local ring = build_ring()
-  ring.CFrame = CFrame.new(myHrp.Position.X, 0.5, myHrp.Position.Z)
+ ring.CFrame = CFrame.new(myHrp.Position.X, 0.5, myHrp.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
     ring.Size   = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
 
     local now = tick()
@@ -141,12 +141,17 @@ local function slap_aura_step()
                 local last = lastSlap[p] or 0
                 if now - last >= 0.12 then
                     lastSlap[p] = now
-                    if STATE.STEP_IN then
-                        local dir = (hrp.Position - myHrp.Position)
-                        if dir.Magnitude > 5 then
-                            myHrp.CFrame = CFrame.new(hrp.Position - dir.Unit * 4)
+                        if STATE.STEP_IN then
+                            local dir = (hrp.Position - myHrp.Position)
+                            if dir.Magnitude > 5 then
+                                local goal = CFrame.new(hrp.Position - dir.Unit * 4)
+                                -- unanchor HRP for the tween, anchor after
+                                local wasAnchored = myHrp.Anchored
+                                myHrp.Anchored = false
+                                TweenService:Create(myHrp, TweenInfo.new(0.05), {CFrame = goal}):Play()
+                                task.delay(0.05, function() myHrp.Anchored = wasAnchored end)
+                            end
                         end
-                    end
                     fire_slap(p)
                      if fireMode == 1 then fireMode = 2
                     elseif fireMode == 2 then fireMode = 3
