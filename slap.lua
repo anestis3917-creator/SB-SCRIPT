@@ -1,31 +1,52 @@
--- slap.lua — v12.0 (True Slap Aura: Spoof Click + Remote + Anti-Kick)
+-- slap.lua — v14.0 (Universal: All Gloves, Royale + Normal SB)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
 local UserInputService  = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local VirtualUser       = game:GetService("VirtualUser")
 local LP                = Players.LocalPlayer
 
 local STATE = {
-    SLAP_AURA      = false,
-    AURA_RADIUS    = 8,     -- Default radius
-    SKIP_RAGDOLL   = true,  -- Don't slap downed players
-    MAX_PER_BURST  = 2,     -- How many players to slap at once
-    BURST_COOLDOWN = 2.0,   -- Wait 2 seconds before slapping again (Anti-Kick)
+    SLAP_AURA   = false,
+    AURA_RADIUS = 8, 
+    IS_ROYALE   = false,
 }
 
 local AURA_RING    = nil
-local lastBurst    = 0
+local lastSlap     = {}
+local ActiveRemotes = {}
 
 local function get_hrp()
     local c = LP.Character
     return c and c:FindFirstChild("HumanoidRootPart") or nil
 end
 
-local Remotes = ReplicatedStorage:WaitForChild("Events", 10)
--- OnAcrobatSlap usually covers most basic gloves
-local SlapRemote = Remotes and Remotes:FindFirstChild("OnAcrobatSlap")
+-- AUTO-DETECT REMOTES
+local function scan_remotes()
+    ActiveRemotes = {}
+    local folder = ReplicatedStorage:FindFirstChild("Events") or ReplicatedStorage:FindFirstChild("Remotes")
+    if not folder then return end
+
+    for _, v in pairs(folder:GetChildren()) do
+        if v:IsA("RemoteEvent") then
+            local n = v.Name:lower()
+            -- Grab any remote that looks like a slap or a hit
+            if n:find("slap") or n:find("hit") or n:find("swing") or n:find("punch") then
+                table.insert(ActiveRemotes, v)
+            end
+        end
+    end
+end
+
+-- Detect if we are in Royale based on the map layout
+local function check_game_mode()
+    -- Slap Royale has a "BusModel" or specific lobby parts
+    local isRoyale = Workspace:FindFirstChild("BusModel") ~= nil or Workspace:FindFirstChild("RoyaleMap") ~= nil
+    if isRoyale ~= STATE.IS_ROYALE then
+        STATE.IS_ROYALE = isRoyale
+        scan_remotes() -- Rescan remotes when map changes
+    end
+end
 
 local function build_ring()
     if AURA_RING and AURA_RING.Parent then return AURA_RING end
@@ -55,43 +76,22 @@ local function in_circle(targetPos, myPos, r)
     return (a - b).Magnitude <= r
 end
 
-local function is_ragdolled(character)
-    local hum = character:FindFirstChildOfClass("Humanoid")
-    if not hum then return true end
-    -- Check if they are downed/ragdolled (Health is low or they have a specific ragdoll state)
-    if hum.Health <= 0 then return true end
-    -- Slap Battles usually puts a "Ragdoll" bool or a "Ragdolled" tag when downed
-    if character:FindFirstChild("Ragdoll") or hum:GetState() == Enum.HumanoidStateType.Physics then
-        return true
-    end
-    return false
-end
-
--- 1. SPOOF CLICK (Simulates you actually clicking your mouse)
-local function spoof_click()
-    pcall(function()
-        -- Tap LMB in the game engine
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton1(Vector2.new(0, 0))
-    end)
-    -- Also try to Activate the equipped tool (the glove) directly
+local function fire_all_slaps(target)
+    -- 1. Spoof the click so the game thinks you swung your glove
     local char = LP.Character
     if char then
         local tool = char:FindFirstChildOfClass("Tool")
-        if tool then
-            pcall(function() tool:Activate() end)
-        end
+        if tool then pcall(function() tool:Activate() end) end
     end
-end
 
--- 2. REMOTE FIRE
-local function fire_remote(target)
-    if not SlapRemote then return end
+    -- 2. Fire every single slap/hit remote we found
     local hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-    pcall(function()
-        SlapRemote:FireServer(target)
-        if hrp then SlapRemote:FireServer(target, hrp.CFrame.LookVector) end
-    end)
+    for _, remote in ipairs(ActiveRemotes) do
+        pcall(function()
+            remote:FireServer(target)
+            if hrp then remote:FireServer(target, hrp.CFrame.LookVector) end
+        end)
+    end
 end
 
 local function slap_aura_step()
@@ -99,6 +99,7 @@ local function slap_aura_step()
     local myHrp = get_hrp()
     if not myHrp then return end
 
+    -- Update ring
     local ring = build_ring()
     local rayParams = RaycastParams.new()
     rayParams.FilterDescendantsInstances = {LP.Character}
@@ -108,39 +109,32 @@ local function slap_aura_step()
     ring.CFrame = CFrame.new(myHrp.Position.X, floorY + 0.1, myHrp.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
     ring.Size = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
 
+    -- Check targets
     local now = tick()
-    -- Anti-Cheat Guard: Wait for the burst cooldown before hitting anyone
-    if now - lastBurst < STATE.BURST_COOLDOWN then return end
-
-    local targetsHit = 0
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LP and p.Character then
             local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-            if hrp and in_circle(hrp.Position, myHrp.Position, STATE.AURA_RADIUS) then
-                
-                -- AuraRagdollCheck toggle
-                if STATE.SKIP_RAGDOLL and is_ragdolled(p.Character) then
-                    continue
-                end
-
-                -- Execute BOTH execution methods
-                spoof_click()
-                fire_remote(p)
-                
-                targetsHit = targetsHit + 1
-                if targetsHit >= STATE.MAX_PER_BURST then
-                    break
+            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+            
+            if hrp and hum and hum.Health > 0 and in_circle(hrp.Position, myHrp.Position, STATE.AURA_RADIUS) then
+                local last = lastSlap[p] or 0
+                -- Anti-kick limit: slap each player only once every 0.25 seconds
+                if now - last >= 0.25 then
+                    lastSlap[p] = now
+                    fire_all_slaps(p)
                 end
             end
         end
     end
-
-    if targetsHit > 0 then
-        lastBurst = now -- Reset the anti-kick timer
-    end
 end
 
--- UI
+-- Auto-scan on load, and re-scan when respawning
+scan_remotes()
+task.spawn(function()
+    while task.wait(2) do check_game_mode() end
+end)
+
+-- UI CODE
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "_oll_ui"
 ScreenGui.ResetOnSpawn = false
@@ -149,7 +143,7 @@ ScreenGui.DisplayOrder = 999
 ScreenGui.Parent = LP:WaitForChild("PlayerGui")
 
 local panel = Instance.new("Frame")
-panel.Size = UDim2.new(0, 240, 0, 160)
+panel.Size = UDim2.new(0, 220, 0, 110)
 panel.Position = UDim2.new(0, 20, 0, 20)
 panel.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
 panel.BorderSizePixel = 0
@@ -159,7 +153,7 @@ Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.BackgroundTransparency = 1
-title.Text = "ollie • slap v12"
+title.Text = "ollie • slap v14"
 title.TextColor3 = Color3.fromRGB(230, 230, 235)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -187,17 +181,6 @@ slider.TextSize = 12
 slider.Parent = panel
 Instance.new("UICorner", slider).CornerRadius = UDim.new(0, 6)
 
-local ragdollBtn = Instance.new("TextButton")
-ragdollBtn.Size = UDim2.new(1, -20, 0, 25)
-ragdollBtn.Position = UDim2.new(0, 10, 0, 110)
-ragdollBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 120) -- On by default
-ragdollBtn.Text = "Skip Ragdolled: ON"
-ragdollBtn.TextColor3 = Color3.fromRGB(18, 18, 22)
-ragdollBtn.Font = Enum.Font.GothamBold
-ragdollBtn.TextSize = 12
-ragdollBtn.Parent = panel
-Instance.new("UICorner", ragdollBtn).CornerRadius = UDim.new(0, 6)
-
 btn.MouseButton1Click:Connect(function()
     STATE.SLAP_AURA = not STATE.SLAP_AURA
     if STATE.SLAP_AURA then
@@ -212,25 +195,12 @@ end)
 
 slider.MouseButton1Click:Connect(function()
     STATE.AURA_RADIUS = STATE.AURA_RADIUS + 2
-    if STATE.AURA_RADIUS > 16 then STATE.AURA_RADIUS = 2 end
+    if STATE.AURA_RADIUS > 16 then STATE.AURA_RADIUS = 4 end
     slider.Text = "Radius: " .. STATE.AURA_RADIUS
-end)
-
-ragdollBtn.MouseButton1Click:Connect(function()
-    STATE.SKIP_RAGDOLL = not STATE.SKIP_RAGDOLL
-    if STATE.SKIP_RAGDOLL then
-        ragdollBtn.Text = "Skip Ragdolled: ON"
-        ragdollBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 120)
-        ragdollBtn.TextColor3 = Color3.fromRGB(18, 18, 22)
-    else
-        ragdollBtn.Text = "Skip Ragdolled: OFF"
-        ragdollBtn.BackgroundColor3 = Color3.fromRGB(36, 36, 44)
-        ragdollBtn.TextColor3 = Color3.fromRGB(230, 230, 235)
-    end
 end)
 
 RunService.RenderStepped:Connect(function()
     if STATE.SLAP_AURA then pcall(slap_aura_step) end
 end)
 
-print("[ollie] slap v12 live. remote=", SlapRemote ~= nil)
+print("[ollie] slap v14 live. remotes found:", #ActiveRemotes)
