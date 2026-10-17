@@ -1,4 +1,4 @@
--- slap.lua — v8.1 (bus-gated Auto Loot, teleport loot)
+-- slap.lua — v8.1 (bus-gated Auto Loot, teleport loot, throttled ESP)
 -- usage: loadstring(game:HttpGet("URL?v="..tick()))()
 
 local Players = game:GetService("Players")
@@ -6,7 +6,6 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
-local PathfindingService = game:GetService("PathfindingService")
 local LP = Players.LocalPlayer
 
 local CONFIG = {
@@ -41,11 +40,6 @@ local LOOT_GEN  = 0
 local function get_hrp()
     local c = LP.Character
     return c and c:FindFirstChild("HumanoidRootPart") or nil
-end
-
-local function get_humanoid()
-    local c = LP.Character
-    return c and c:FindFirstChildOfClass("Humanoid") or nil
 end
 
 local function detect_bus()
@@ -369,8 +363,6 @@ local function slider_row(text, min, max, initial, callback)
     return api
 end
 
-print("v8.1: widgets ready")
-
 
 section("COMBAT")
 
@@ -457,7 +449,6 @@ local function rebuild_item_cache()
     end
 end
 
-
 local function new_text(color)
     local t = Drawing.new("Text")
     t.Size = 16
@@ -496,6 +487,7 @@ local function get_glove(p)
     gloveCache[p] = result
     return result
 end
+
 local function update_player_esp()
     local cam = Workspace.CurrentCamera
     if not cam then return end
@@ -548,8 +540,7 @@ local function update_item_esp()
         if obj.Parent then
             local part = prompt_part(obj)
             if part then
-                local delta = part.Position - my_pos
-                local dist = delta.Magnitude
+                local dist = (part.Position - my_pos).Magnitude
                 if dist <= 500 then
                     local sp, on = cam:WorldToViewportPoint(part.Position + Vector3.new(0, 2, 0))
                     if on then
@@ -574,13 +565,6 @@ local function update_item_esp()
         end
     end
 end
-    for obj, d in pairs(itemDrawings) do
-        if not seen[obj] or not obj.Parent then
-            for _, o in pairs(d) do pcall(function() o:Remove() end) end
-            itemDrawings[obj] = nil
-        end
-    end
-end
 
 -- ============================ teleport loot ============================
 local function nearest_prompt()
@@ -588,8 +572,8 @@ local function nearest_prompt()
     if not hrp then return nil end
     local my_pos = hrp.Position
     local best, best_dist = nil, CONFIG.LOOT_RANGE
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.Parent and matches(obj.Parent.Name) then
+    for _, obj in ipairs(itemCache) do
+        if obj.Parent and matches(obj.Parent.Name) then
             local part = prompt_part(obj)
             if part then
                 local d = (part.Position - my_pos).Magnitude
@@ -608,8 +592,7 @@ local function loot_cycle()
     if not part then return false end
 
     local char = LP.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return false end
+    if not char then return false end
 
     local target = part.Position + Vector3.new(0, 3, 0)
     local ok = pcall(function()
@@ -636,7 +619,7 @@ end
 
 task.spawn(function()
     while task.wait(0.5) do
-        if STATE.AUTO_LOOT and detect_bus() == false then
+        if STATE.AUTO_LOOT and not detect_bus() then
             pcall(loot_cycle)
             local wait_for = CONFIG.LOOT_COOLDOWN
                 + (math.random() * 2 - 1) * CONFIG.LOOT_JITTER
@@ -680,6 +663,9 @@ local function follow_aura()
     if hrp then AURA_PART.CFrame = hrp.CFrame end
 end
 
+RunService.RenderStepped:Connect(function()
+    if STATE.ESP_PLAYERS then pcall(update_player_esp) end
+
     if STATE.ESP_ITEMS then
         itemScanAccum = itemScanAccum + 1
         itemCacheAge = itemCacheAge + 1
@@ -692,6 +678,7 @@ end
             pcall(update_item_esp)
         end
     end
+
     if STATE.HIDE_AURA or STATE.HIDE_LOBBY then
         make_aura()
         if STATE.HIDE_LOBBY then
@@ -716,3 +703,4 @@ Players.PlayerRemoving:Connect(function(p)
 end)
 
 print("v8.1: features live")
+print("v8.1: widgets ready")
