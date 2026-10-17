@@ -1,4 +1,4 @@
--- slap.lua — v8.1 (bus-gated Auto Loot, teleport loot, throttled ESP)
+-- slap.lua — v8.2 (Tool-based loot, fixed ESP, fixed panel)
 -- usage: loadstring(game:HttpGet("URL?v="..tick()))()
 
 local Players = game:GetService("Players")
@@ -9,11 +9,8 @@ local TweenService = game:GetService("TweenService")
 local LP = Players.LocalPlayer
 
 local CONFIG = {
-    PROMPT_PARENT_PATTERNS = {
-        "crate", "box", "loot", "barrel", "chest", "supply", "apple", "banana",
-    },
-    ROYALE_MARKER_NAME = "Arena",
     BUS_MARKER_NAME    = "BusModel",
+    ITEMS_FOLDER_NAME  = "Items",
     AURA_TEXTURE_ID    = "rbxassetid://0",
     AURA_PARK_HEIGHT   = 5000,
     LOOT_COOLDOWN      = 3.0,
@@ -36,6 +33,9 @@ local STATE = {
 
 local AURA_PART = nil
 local LOOT_GEN  = 0
+local gloveCache = {}
+local playerDrawings, itemDrawings = {}, {}
+local itemScanAccum = 0
 
 local function get_hrp()
     local c = LP.Character
@@ -46,19 +46,8 @@ local function detect_bus()
     return Workspace:FindFirstChild(CONFIG.BUS_MARKER_NAME) ~= nil
 end
 
-local function matches(name)
-    local l = name:lower()
-    for _, p in ipairs(CONFIG.PROMPT_PARENT_PATTERNS) do
-        if l:find(p, 1, true) then return true end
-    end
-    return false
-end
-
-local function prompt_part(prompt)
-    local p = prompt.Parent
-    if not p then return nil end
-    if p:IsA("BasePart") then return p end
-    return p:FindFirstChildWhichIsA("BasePart")
+local function get_items_folder()
+    return Workspace:FindFirstChild(CONFIG.ITEMS_FOLDER_NAME)
 end
 
 local HITBOX_NAMES = { "Hitbox", "SlapHitbox", "Aura", "SlapAura", "Handle" }
@@ -98,6 +87,8 @@ local COLORS = {
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "_oll_ui"
 ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.DisplayOrder = 999999
 ScreenGui.Parent = LP:WaitForChild("PlayerGui")
 
 local panel = Instance.new("Frame")
@@ -105,6 +96,7 @@ panel.Size = UDim2.new(0, 260, 0, 500)
 panel.Position = UDim2.new(0, 20, 0, 20)
 panel.BackgroundColor3 = COLORS.bg
 panel.BorderSizePixel = 0
+panel.Active = true
 panel.Parent = ScreenGui
 Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
 
@@ -112,6 +104,7 @@ local titleBar = Instance.new("Frame")
 titleBar.Size = UDim2.new(1, 0, 0, 34)
 titleBar.BackgroundColor3 = COLORS.panel
 titleBar.BorderSizePixel = 0
+titleBar.Active = true
 titleBar.Parent = panel
 Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 10)
 
@@ -165,6 +158,31 @@ local layout = Instance.new("UIListLayout")
 layout.Padding = UDim.new(0, 6)
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Parent = content
+
+-- drag
+local dragStart, startPos
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+       or input.UserInputType == Enum.UserInputType.Touch then
+        dragStart = input.Position
+        startPos = panel.Position
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragStart and (input.UserInputType == Enum.UserInputType.MouseMovement
+                      or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        panel.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+       or input.UserInputType == Enum.UserInputType.Touch then
+        dragStart = nil
+    end
+end)
 
 local function section(text)
     local h = Instance.new("TextLabel")
@@ -233,9 +251,7 @@ local function toggle_row(text, key, callback)
     end
     btn.MouseButton1Click:Connect(function()
         set(not on)
-        if not on and key == "AUTO_LOOT" then
-            LOOT_GEN = LOOT_GEN + 1
-        end
+        if not on and key == "AUTO_LOOT" then LOOT_GEN = LOOT_GEN + 1 end
     end)
     return { row = row, set = set, get = function() return on end }
 end
@@ -253,6 +269,7 @@ local function action_row(text, callback, danger)
     Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
     row.MouseButton1Click:Connect(callback)
 end
+
 
 local function slider_row(text, min, max, initial, callback)
     local row = Instance.new("Frame")
@@ -309,6 +326,8 @@ local function slider_row(text, min, max, initial, callback)
 
     local value = initial
     local locked = false
+    local dragging = false
+
     local function refresh()
         local pct = (value - min) / (max - min)
         fill.Size = UDim2.new(pct, 0, 1, 0)
@@ -317,7 +336,6 @@ local function slider_row(text, min, max, initial, callback)
     end
     refresh()
 
-    local dragging = false
     local function from_x(x)
         local rel = math.clamp((x - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
         value = math.floor(rel * (max - min) + 0.5) + min
@@ -348,21 +366,17 @@ local function slider_row(text, min, max, initial, callback)
         end
     end)
 
-    local api = {}
-    function api.set_locked(v)
-        locked = v
-        fill.BackgroundTransparency = v and 0.6 or 0
-        knob.BackgroundTransparency = v and 0.5 or 0
-        lbl.TextTransparency = v and 0.4 or 0
-        valLbl.TextTransparency = v and 0.4 or 0
-    end
-    function api.reset(v)
-        value = v
-        refresh()
-    end
-    return api
+    return {
+        set_locked = function(v)
+            locked = v
+            fill.BackgroundTransparency = v and 0.6 or 0
+            knob.BackgroundTransparency = v and 0.5 or 0
+            lbl.TextTransparency = v and 0.4 or 0
+            valLbl.TextTransparency = v and 0.4 or 0
+        end,
+        reset = function(v) value = v refresh() end,
+    }
 end
-
 
 section("COMBAT")
 
@@ -387,7 +401,7 @@ slapAuraApi.set_locked(true)
 section("LOOT")
 
 local lootToggle
-lootToggle = toggle_row("Auto Loot  (teleport + collect)", "AUTO_LOOT")
+lootToggle = toggle_row("Auto Loot", "AUTO_LOOT")
 
 local lootRow = lootToggle.row
 local lootBtn = lootRow:FindFirstChildOfClass("TextButton")
@@ -396,17 +410,20 @@ local lootLocked = true
 
 local function set_loot_locked(v)
     lootLocked = v
-    if lootBtn then lootBtn.Active = not v lootBtn.AutoButtonColor = not v end
+    if lootBtn then
+        lootBtn.Active = not v
+        lootBtn.AutoButtonColor = not v
+    end
     if lootLbl then lootLbl.TextTransparency = v and 0.5 or 0 end
 end
 set_loot_locked(true)
 
 task.spawn(function()
     while task.wait(0.25) do
-        local now = detect_bus()
-        if now and lootLocked then
+        local onBus = detect_bus()
+        if onBus and lootLocked then
             set_loot_locked(false)
-        elseif not now and not lootLocked then
+        elseif not onBus and not lootLocked then
             set_loot_locked(true)
             if STATE.AUTO_LOOT then
                 lootToggle.set(false)
@@ -423,31 +440,14 @@ action_row("Stop Looting", function()
 end, true)
 
 section("ESP")
-toggle_row("Player ESP  (name + glove)", "ESP_PLAYERS")
-toggle_row("Item ESP  (name label)",      "ESP_ITEMS")
+toggle_row("Player ESP", "ESP_PLAYERS")
+toggle_row("Item ESP", "ESP_ITEMS")
 
 section("MISC")
 toggle_row("Hide Aura Above Lobby", "HIDE_AURA")
 toggle_row("Hide Above Waiting Lobby", "HIDE_LOBBY")
 
-print("v8.1: sections built")
-
--- ============================ ESP engine ============================
-local playerDrawings, itemDrawings = {}, {}
-local gloveCache = {}
-local itemScanAccum = 0
-local itemCache = {}
-local itemCacheAge = 0
-
-local function rebuild_item_cache()
-    itemCache = {}
-    local root = Workspace:FindFirstChild("Items") or Workspace
-    for _, obj in ipairs(root:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.Parent and matches(obj.Parent.Name) then
-            table.insert(itemCache, obj)
-        end
-    end
-end
+print("v8.2: sections built")
 
 local function new_text(color)
     local t = Drawing.new("Text")
@@ -459,6 +459,15 @@ local function new_text(color)
     t.Color = color
     t.Visible = false
     return t
+end
+
+local function new_box(color)
+    local b = Drawing.new("Square")
+    b.Thickness = 1
+    b.Filled = false
+    b.Color = color
+    b.Visible = false
+    return b
 end
 
 local function get_glove(p)
@@ -535,49 +544,70 @@ local function update_item_esp()
     local my_hrp = get_hrp()
     local my_pos = my_hrp and my_hrp.Position
     if not my_pos then return end
+    local folder = get_items_folder()
+    if not folder then
+        for _, d in pairs(itemDrawings) do
+            if d.label then d.label.Visible = false end
+            if d.box then d.box.Visible = false end
+        end
+        return
+    end
     local seen = {}
-    for _, obj in ipairs(itemCache) do
-        if obj.Parent then
-            local part = prompt_part(obj)
-            if part then
-                local dist = (part.Position - my_pos).Magnitude
+    for _, tool in ipairs(folder:GetChildren()) do
+        if tool:IsA("Tool") then
+            local handle = tool:FindFirstChild("Handle")
+            if handle and handle:IsA("BasePart") then
+                local dist = (handle.Position - my_pos).Magnitude
                 if dist <= 500 then
-                    local sp, on = cam:WorldToViewportPoint(part.Position + Vector3.new(0, 2, 0))
+                    local sp, on = cam:WorldToViewportPoint(handle.Position + Vector3.new(0, 2, 0))
                     if on then
-                        seen[obj] = true
-                        if not itemDrawings[obj] then
-                            itemDrawings[obj] = { label = new_text(Color3.fromRGB(90, 255, 130)) }
+                        seen[tool] = true
+                        if not itemDrawings[tool] then
+                            itemDrawings[tool] = {
+                                label = new_text(Color3.fromRGB(90, 255, 130)),
+                                box = new_box(Color3.fromRGB(90, 255, 130)),
+                            }
                         end
-                        local d = itemDrawings[obj]
-                        local n = obj.Parent.Name:gsub("%d+$", ""):gsub("_", " ")
-                        d.label.Text = n
-                        d.label.Position = Vector2.new(sp.X, sp.Y)
+                        local d = itemDrawings[tool]
+                        local spTop, onTop = cam:WorldToViewportPoint(handle.Position + Vector3.new(0, 2.5, 0))
+                        local spBot, onBot = cam:WorldToViewportPoint(handle.Position - Vector3.new(0, 2.5, 0))
+                        if onTop and onBot then
+                            local h = math.abs(spBot.Y - spTop.Y)
+                            local w = h * 0.7
+                            d.box.Size = Vector2.new(w, h)
+                            d.box.Position = Vector2.new(sp.X - w/2, spTop.Y)
+                            d.box.Visible = true
+                        end
+                        d.label.Text = tool.Name
+                        d.label.Position = Vector2.new(sp.X, sp.Y - 20)
                         d.label.Visible = true
                     end
                 end
             end
         end
     end
-    for obj, d in pairs(itemDrawings) do
-        if not seen[obj] or not obj.Parent then
-            for _, o in pairs(d) do pcall(function() o:Remove() end) end
-            itemDrawings[obj] = nil
+    for tool, d in pairs(itemDrawings) do
+        if not seen[tool] or not tool.Parent then
+            if d.label then pcall(function() d.label:Remove() end) end
+            if d.box then pcall(function() d.box:Remove() end) end
+            itemDrawings[tool] = nil
         end
     end
 end
 
--- ============================ teleport loot ============================
-local function nearest_prompt()
+local function nearest_tool()
+    local folder = get_items_folder()
+    if not folder then return nil end
     local hrp = get_hrp()
     if not hrp then return nil end
     local my_pos = hrp.Position
     local best, best_dist = nil, CONFIG.LOOT_RANGE
-    for _, obj in ipairs(itemCache) do
-        if obj.Parent and matches(obj.Parent.Name) then
-            local part = prompt_part(obj)
-            if part then
-                local d = (part.Position - my_pos).Magnitude
-                if d < best_dist then best_dist = d best = obj end
+    for _, tool in ipairs(folder:GetChildren()) do
+        if tool:IsA("Tool") then
+            local handle = tool:FindFirstChild("Handle")
+            if handle and handle:IsA("BasePart") then
+                local d = (handle.Position - my_pos).Magnitude
+                if d < best_dist then best_dist = d best = tool end
             end
         end
     end
@@ -586,34 +616,18 @@ end
 
 local function loot_cycle()
     local my_gen = LOOT_GEN
-    local prompt = nearest_prompt()
-    if not prompt then return false end
-    local part = prompt_part(prompt)
-    if not part then return false end
-
+    local tool = nearest_tool()
+    if not tool then return false end
+    local handle = tool:FindFirstChild("Handle")
+    if not handle then return false end
     local char = LP.Character
     if not char then return false end
-
-    local target = part.Position + Vector3.new(0, 3, 0)
-    local ok = pcall(function()
-        char:PivotTo(CFrame.new(target))
+    pcall(function()
+        char:PivotTo(CFrame.new(handle.Position + Vector3.new(0, 3, 0)))
     end)
-    if not ok then return false end
-
-    task.wait(0.15 + math.random() * 0.2)
+    task.wait(0.25)
     if my_gen ~= LOOT_GEN or not STATE.AUTO_LOOT then return false end
-
-    if prompt.Parent then
-        pcall(function()
-            prompt.RequiresLineOfSight = false
-            prompt.MaxActivationDistance = 9e9
-        end)
-        pcall(function()
-            prompt:InputHoldBegin()
-            task.wait(prompt.HoldDuration + 0.05)
-            prompt:InputHoldEnd()
-        end)
-    end
+    task.wait(0.1)
     return true
 end
 
@@ -632,7 +646,6 @@ task.spawn(function()
     end
 end)
 
--- ============================ aura ============================
 local function make_aura()
     if AURA_PART then return end
     local part = Instance.new("Part")
@@ -668,12 +681,7 @@ RunService.RenderStepped:Connect(function()
 
     if STATE.ESP_ITEMS then
         itemScanAccum = itemScanAccum + 1
-        itemCacheAge = itemCacheAge + 1
-        if itemCacheAge >= 120 then
-            itemCacheAge = 0
-            pcall(rebuild_item_cache)
-        end
-        if itemScanAccum >= 60 then
+        if itemScanAccum >= 30 then
             itemScanAccum = 0
             pcall(update_item_esp)
         end
@@ -681,15 +689,34 @@ RunService.RenderStepped:Connect(function()
 
     if STATE.HIDE_AURA or STATE.HIDE_LOBBY then
         make_aura()
-        if STATE.HIDE_LOBBY then
-            park_aura()
-        elseif STATE.HIDE_AURA then
-            local inMatch = workspace:FindFirstChild(CONFIG.ROYALE_MARKER_NAME) ~= nil
-            if inMatch then follow_aura() else park_aura() end
-        end
+        if STATE.HIDE_LOBBY then park_aura() else follow_aura() end
     end
 
     if STATE.SLAP_AURA then pcall(apply_expander) end
+end)
+
+minBtn.MouseButton1Click:Connect(function()
+    if content.Visible then
+        content.Visible = false
+        panel.Size = UDim2.new(0, 260, 0, 34)
+    else
+        content.Visible = true
+        panel.Size = UDim2.new(0, 260, 0, 500)
+    end
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+    LOOT_GEN = LOOT_GEN + 1
+    STATE.AUTO_LOOT = false
+    for _, d in pairs(playerDrawings) do
+        for _, o in pairs(d) do pcall(function() o:Remove() end) end
+    end
+    for _, d in pairs(itemDrawings) do
+        if d.label then pcall(function() d.label:Remove() end) end
+        if d.box then pcall(function() d.box:Remove() end) end
+    end
+    if AURA_PART then pcall(function() AURA_PART:Destroy() end) end
+    ScreenGui:Destroy()
 end)
 
 LP.CharacterAdded:Connect(function()
@@ -702,4 +729,5 @@ Players.PlayerRemoving:Connect(function(p)
     gloveCache[p] = nil
 end)
 
-print("v8.1: features live")
+print("v8.2: features live")
+print("v8.2: widgets ready")
