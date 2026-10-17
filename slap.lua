@@ -449,8 +449,21 @@ action_row("Stop Looting", function()
 end, true)
 
 section("ESP")
-toggle_row("Player ESP", "ESP_PLAYERS")
-toggle_row("Item ESP", "ESP_ITEMS")
+toggle_row("Player ESP", "ESP_PLAYERS", function(v)
+    if not v then
+        for _, d in pairs(playerDrawings) do
+            for _, o in pairs(d) do pcall(function() o.Visible = false end) end
+        end
+    end
+end)
+toggle_row("Item ESP", "ESP_ITEMS", function(v)
+    if not v then
+        for _, d in pairs(itemDrawings) do
+            if d.label then pcall(function() d.label.Visible = false end) end
+            if d.box then pcall(function() d.box.Visible = false end) end
+        end
+    end
+end)
 
 section("MISC")
 toggle_row("Hide Aura Above Lobby", "HIDE_AURA")
@@ -698,7 +711,7 @@ RunService.RenderStepped:Connect(function()
 
     if STATE.ESP_ITEMS then
         itemScanAccum = itemScanAccum + 1
-        if itemScanAccum >= 15 then
+        if itemScanAccum >= 1 then
             itemScanAccum = 0
             pcall(update_item_esp)
         end
