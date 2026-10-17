@@ -1,4 +1,4 @@
--- slap.lua — v22.0 (Anti-Slap: Velocity Spike Freeze)
+-- slap.lua — v26.2 (Real ESP Cleanup + Anti-Slap)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
@@ -12,8 +12,11 @@ local STATE = {
     ANTI_SLAP   = false,
 }
 
-local isFrozen = false
-local freezeEndTime = 0
+local antiSlapConnection = nil
+local lastSlapTime = 0
+
+local playerDrawings, itemDrawings = {}, {}
+local gloveCache = {}
 
 local function get_hrp()
     local c = LP.Character
@@ -21,54 +24,30 @@ local function get_hrp()
 end
 
 -- ================= ANTI-SLAP =================
-local function toggle_anti_slap(on)local function toggle_anti_slap(on)
+local function toggle_anti_slap(on)
     if antiSlapConnection then
         antiSlapConnection:Disconnect()
         antiSlapConnection = nil
     end
 
-    if not on then
-        local char = LP.Character
-        if char then
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hrp then 
-                hrp.Anchored = false 
-                hrp.Velocity = Vector3.new(0,0,0)
-            end
-            if hum then 
-                hum.WalkSpeed = 16 
-                hum.JumpPower = 50
-                hum:ChangeState(Enum.HumanoidStateType.Running)
-            end
-        end
-        return
-    end
+    if not on then return end
 
-    antiSlapConnection = RunService.Heartbeat:Connect(function()
+    antiSlapConnection = RunService.RenderStepped:Connect(function()
         local char = LP.Character
         if not char then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
         local hum = char:FindFirstChildOfClass("Humanoid")
         if not hrp or not hum then return end
 
-        local now = tick()
-        local vel = hrp.Velocity.Magnitude
-        
-        if vel > 50 and not isFrozen then
-            isFrozen = true
-            hrp.Anchored = true
-            freezeEndTime = now + 0.4
-        end
+        local isSlapped = (hum:GetState() == Enum.HumanoidStateType.Physics) or (hum:GetState() == Enum.HumanoidStateType.GettingUp) or (char:FindFirstChild("Ragdoll"))
 
-        if isFrozen and now > freezeEndTime then
-            isFrozen = false
-            hrp.Anchored = false
+        if isSlapped then
+            lastSlapTime = tick()
             hrp.Velocity = Vector3.new(0, 0, 0)
-            hum:ChangeState(Enum.HumanoidStateType.Running)
-        end
-    end)
-end
+            hrp.RotVelocity = Vector3.new(0, 0, 0)
+        else
+            if (tick() - lastSlapTime < 0.5) then
+                 hrp.Velocity = Vector3.new(0, hrp.Velocity.Y, 0)
             end
         end
     end)
@@ -109,7 +88,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -70, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "ollie  •  slap v22"
+titleLabel.Text = "ollie  •  slap v26.2"
 titleLabel.TextColor3 = COLORS.text
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 13
@@ -227,30 +206,62 @@ local function toggle_row(text, key, callback)
 end
 
 section("COMBAT")
-toggle_row("Anti-Slap (Velocity)", "ANTI_SLAP", function(v) toggle_anti_slap(v) end)
+toggle_row("Anti-Slap (Freeze)", "ANTI_SLAP", function(v) toggle_anti_slap(v) end)
 
 section("ESP")
-toggle_row("Player ESP", "ESP_PLAYERS", function(v) if not v then for _, d in pairs(playerDrawings) do for _, o in pairs(d) do pcall(function() o.Visible = false end) end end end end)
-toggle_row("Item ESP", "ESP_ITEMS", function(v) if not v then for _, d in pairs(itemDrawings) do if d.label then pcall(function() d.label.Visible = false end) end if d.box then pcall(function() d.box.Visible = false end) end end end end)
+toggle_row("Player ESP", "ESP_PLAYERS", function(v) 
+    if not v then 
+        -- Wipe Player ESP from screen
+        for _, d in pairs(playerDrawings) do 
+            for _, o in pairs(d) do pcall(function() o:Remove() end) end 
+        end 
+        playerDrawings = {} 
+    end 
+end)
+
+toggle_row("Item ESP", "ESP_ITEMS", function(v) 
+    if not v then 
+        -- Wipe Item ESP from screen
+        for _, d in pairs(itemDrawings) do 
+            if d.label then pcall(function() d.label:Remove() end) end 
+            if d.box then pcall(function() d.box:Remove() end) end 
+        end 
+        itemDrawings = {} 
+    end 
+end)
 
 -- ================= ESP DRAWING =================
-local playerDrawings, itemDrawings = {}, {}
-local gloveCache = {}
 local CONFIG = {
     ITEMS_FOLDER_NAME = "Items",
     ESP_RANGE = 2500,
-    DEFAULT_ITEM_COLOR = Color3.fromRGB(90, 255, 130),
+    DEFAULT_ITEM_COLOR = Color3.fromRGB(255, 255, 255),
     ITEM_RARITY = {
-        ["apple"]              = Color3.fromRGB(220, 220, 220),
-        ["healing potion"]     = Color3.fromRGB(80, 255, 100),
-        ["bandage"]            = Color3.fromRGB(80, 160, 255),
-        ["forcefield crystal"] = Color3.fromRGB(80, 160, 255),
-        ["bomb"]               = Color3.fromRGB(80, 160, 255),
-        ["first aid kit"]      = Color3.fromRGB(200, 80, 255),
-        ["boba"]               = Color3.fromRGB(200, 80, 255),
-        ["potion of strength"] = Color3.fromRGB(200, 80, 255),
-        ["speed potion"]       = Color3.fromRGB(255, 230, 60),
-        ["true power"]         = Color3.fromRGB(255, 80, 80),
+        -- Common (Green)
+        ["apple"]              = Color3.fromRGB(50, 255, 50),
+        ["bull's essence"]     = Color3.fromRGB(50, 255, 50),
+        ["frog potion"]        = Color3.fromRGB(50, 255, 50),
+        
+        -- Rare (Blue)
+        ["bandage"]            = Color3.fromRGB(50, 150, 255),
+        ["boba"]               = Color3.fromRGB(50, 150, 255),
+        ["bomb"]               = Color3.fromRGB(50, 150, 255),
+        ["cube of ice"]        = Color3.fromRGB(50, 150, 255),
+        ["forcefield crystal"] = Color3.fromRGB(50, 150, 255),
+        
+        -- Epic (Purple)
+        ["first aid kit"]      = Color3.fromRGB(180, 50, 255),
+        ["gravitation shard"]  = Color3.fromRGB(180, 50, 255),
+        ["potion of strength"] = Color3.fromRGB(180, 50, 255),
+        ["sphere of fury"]     = Color3.fromRGB(180, 50, 255),
+        ["tomahawk"]           = Color3.fromRGB(180, 50, 255),
+        
+        -- Legendary (Yellow)
+        ["healing potion"]     = Color3.fromRGB(255, 215, 0),
+        ["lightning potion"]   = Color3.fromRGB(255, 215, 0),
+        ["speed potion"]       = Color3.fromRGB(255, 215, 0),
+        
+        -- Godly (White/Grey)
+        ["true power"]         = Color3.fromRGB(255, 255, 255),
     },
 }
 
@@ -344,10 +355,10 @@ end)
 
 closeBtn.MouseButton1Click:Connect(function()
     STATE.ANTI_SLAP = false
-    if antiSlapConnection then antiSlapConnection:Disconnect() end
+    toggle_anti_slap(false)
     for _, d in pairs(playerDrawings) do for _, o in pairs(d) do pcall(function() o:Remove() end) end end
     for _, d in pairs(itemDrawings) do if d.label then pcall(function() d.label:Remove() end) end if d.box then pcall(function() d.box:Remove() end) end end
     ScreenGui:Destroy()
 end)
 
-print("[ollie] slap v22 live.")
+print("[ollie] slap v26.2 live.")
