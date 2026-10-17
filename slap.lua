@@ -1,4 +1,4 @@
--- slap.lua — v9.4 PC (Full UI, Aura, Loot, ESP)
+-- slap.lua — v9.7 (Auto-Detect Glove, Swing Anim, True Reach)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
@@ -13,7 +13,7 @@ local CONFIG = {
     LOOT_COOLDOWN     = 3.0,
     LOOT_JITTER       = 0.5,
     LOOT_RANGE        = 500,
-    ESP_RANGE         = 2000, -- Lowered from 5000 to stop PC crashes
+    ESP_RANGE         = 2000,
     DEFAULT_ITEM_COLOR = Color3.fromRGB(90, 255, 130),
     ITEM_RARITY = {
         ["apple"]              = Color3.fromRGB(220, 220, 220),
@@ -39,7 +39,7 @@ local STATE = {
     ESP_PLAYERS = false,
     ESP_ITEMS   = false,
     SLAP_AURA   = false,
-    AURA_RADIUS = 15,
+    AURA_RADIUS = 6, -- Small radius so the server doesn't reject it
 }
 
 local LOOT_GEN     = 0
@@ -102,6 +102,13 @@ end
 local function fire_slap(target)
     if not SlapRemote then return end
     local hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+    
+    -- Play swing animation
+    local anim = Instance.new("Animation")
+    anim.AnimationId = "rbxassetid://8332520904" 
+    local track = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid") and LP.Character.Humanoid:LoadAnimation(anim)
+    if track then track:Play() end
+    
     pcall(function()
         if fireMode == 1 then SlapRemote:FireServer(target)
         elseif fireMode == 2 then SlapRemote:FireServer()
@@ -116,10 +123,12 @@ local function slap_aura_step()
     if not myHrp then return end
 
     local ring = build_ring()
-        local rayParams = RaycastParams.new()
+    
+    local rayParams = RaycastParams.new()
     rayParams.FilterDescendantsInstances = {LP.Character}
     local ray = Workspace:Raycast(myHrp.Position, Vector3.new(0, -50, 0), rayParams)
     local floorY = ray and ray.Position.Y or (myHrp.Position.Y - 3)
+    
     ring.CFrame = CFrame.new(myHrp.Position.X, floorY + 0.1, myHrp.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
     ring.Size = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
 
@@ -132,13 +141,15 @@ local function slap_aura_step()
                 local last = lastSlap[p] or 0
                 if now - last >= 0.12 then
                     lastSlap[p] = now
-                     local char = LP.Character
+                    
+                    local char = LP.Character
                     if char then
                         local hb = char:FindFirstChild("Hitbox") or char:FindFirstChild("HumanoidRootPart")
                         if hb and hb.Size.X < 10 then
                             hb.Size = Vector3.new(15, 15, 15)
                         end
                     end
+                    
                     fire_slap(p)
                     if fireMode == 1 then fireMode = 2 elseif fireMode == 2 then fireMode = 3 else fireMode = 1 end
                 end
@@ -147,7 +158,7 @@ local function slap_aura_step()
     end
 end
 
--- ================= UI =================
+-- UI CODE STARTS HERE (Same as before)
 local COLORS = {
     bg = Color3.fromRGB(18, 18, 22), panel = Color3.fromRGB(26, 26, 32), row = Color3.fromRGB(36, 36, 44),
     accent = Color3.fromRGB(0, 200, 120), accentOff = Color3.fromRGB(60, 60, 70), text = Color3.fromRGB(230, 230, 235),
@@ -182,7 +193,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -70, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "ollie  •  slap v9.4"
+titleLabel.Text = "ollie  •  slap v9.7"
 titleLabel.TextColor3 = COLORS.text
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 13
@@ -406,7 +417,7 @@ end
 
 section("COMBAT")
 toggle_row("Slap Aura", "SLAP_AURA", function(v) if not v then kill_ring() end end)
-slider_row("Aura Radius", 4, 60, STATE.AURA_RADIUS, function(v) STATE.AURA_RADIUS = v end)
+slider_row("Aura Radius", 4, 20, STATE.AURA_RADIUS, function(v) STATE.AURA_RADIUS = v end)
 
 section("LOOT")
 local lootToggle
@@ -575,4 +586,4 @@ end)
 LP.CharacterAdded:Connect(function() gloveCache[LP] = nil lastSlap = {} task.wait(0.5) if STATE.SLAP_AURA then build_ring() end end)
 Players.PlayerRemoving:Connect(function(p) gloveCache[p] = nil lastSlap[p] = nil end)
 
-print("[ollie] slap v9.4 live. remote=", SlapRemote ~= nil)
+print("[ollie] slap v9.7 live. remote=", SlapRemote ~= nil)
