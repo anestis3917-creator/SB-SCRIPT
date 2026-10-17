@@ -275,13 +275,36 @@ end
 
 local function new_text(color) local t = Drawing.new("Text") t.Size = 16 t.Center = true t.Outline = true t.OutlineColor = Color3.new(0, 0, 0) t.Font = 2 t.Color = color t.Visible = false return t end
 local function new_box(color) local b = Drawing.new("Square") b.Thickness = 1 b.Filled = false b.Color = color b.Visible = false return b end
-
 local function get_glove(p)
     if gloveCache[p] then return gloveCache[p] end
-    local result = "?" 
+    local result = "?"
+    
+    -- 1. Check leaderstats (Normal SB)
     local c = p:FindFirstChild("leaderstats") and p.leaderstats:FindFirstChild("Glove")
-    if c then result = tostring(c.Value) else local char = p.Character if char then for _, v in ipairs(char:GetChildren()) do if v:IsA("Tool") then result = v.Name break end end end end
-    gloveCache[p] = result return result
+    if c then 
+        result = tostring(c.Value) 
+    else 
+        -- 2. Check equipped Tool (Slap Royale)
+        local char = p.Character
+        if char then 
+            for _, v in ipairs(char:GetChildren()) do 
+                if v:IsA("Tool") then 
+                    result = v.Name 
+                    break 
+                end 
+            end 
+        end
+        -- 3. Check if it's in a custom folder (Royale fallback)
+        if result == "?" then
+            local royaleGlove = p:FindFirstChild("RoyaleGlove") or (p.Character and p.Character:FindFirstChild("RoyaleGlove"))
+            if royaleGlove and royaleGlove:IsA("StringValue") then
+                result = tostring(royaleGlove.Value)
+            end
+        end
+    end
+    
+    gloveCache[p] = result 
+    return result
 end
 
 local function update_player_esp()
