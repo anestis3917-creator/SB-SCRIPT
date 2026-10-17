@@ -1,4 +1,4 @@
--- slap.lua — v20.1 (True Anti-Slap: 0.5s Anchor)
+-- slap.lua — v21.0 (Pure State Anchor)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
@@ -13,7 +13,6 @@ local STATE = {
 }
 
 local antiSlapConnection = nil
-local lastSlapTime = 0
 
 local function get_hrp()
     local c = LP.Character
@@ -41,22 +40,16 @@ local function toggle_anti_slap(on)
         local hum = char:FindFirstChildOfClass("Humanoid")
         if not hrp or not hum then return end
 
-        local tool = char:FindFirstChildOfClass("Tool")
         local state = hum:GetState()
         
-        -- Trigger if no glove OR getting up OR physics
-        local isSlapped = (tool == nil) or (state == Enum.HumanoidStateType.GettingUp) or (state == Enum.HumanoidStateType.Physics)
-
-        if isSlapped then
-            -- Record the time we got slapped
-            lastSlapTime = tick()
-            -- Anchor to stop the pop and slide
+        -- ONLY freeze if the game puts you in a knocked/ragdoll state
+        if state == Enum.HumanoidStateType.Physics or state == Enum.HumanoidStateType.GettingUp then
             if not hrp.Anchored then
                 hrp.Anchored = true
             end
         else
-            -- Unanchor if 0.5 seconds have passed since the last slap frame
-            if hrp.Anchored and (tick() - lastSlapTime > 0.5) then
+            -- The absolute SECOND you are back to normal, unanchor so you can walk
+            if hrp.Anchored then
                 hrp.Anchored = false
             end
         end
@@ -98,7 +91,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -70, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "ollie  •  slap v20.1"
+titleLabel.Text = "ollie  •  slap v21"
 titleLabel.TextColor3 = COLORS.text
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 13
@@ -339,4 +332,4 @@ closeBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
-print("[ollie] slap v20.1 live.")
+print("[ollie] slap v21 live.")
