@@ -20,18 +20,35 @@ local CONFIG = {
     BASE_HITBOX        = 5,
     SLIDER_MAX         = 10,
     DEFAULT_ITEM_COLOR = Color3.fromRGB(90, 255, 130),
-    ITEM_RARITY = {
-        ["apple"]           = Color3.fromRGB(80, 255, 100),
-        ["banana"]          = Color3.fromRGB(255, 230, 60),
-        ["boba"]            = Color3.fromRGB(80, 160, 255),
-        ["bandage"]         = Color3.fromRGB(255, 255, 255),
-        ["first aid kit"]   = Color3.fromRGB(255, 120, 120),
-        ["frog potion"]     = Color3.fromRGB(120, 255, 120),
-        ["bull's essence"]  = Color3.fromRGB(255, 90, 90),
-        ["tomahawk"]        = Color3.fromRGB(200, 200, 200),
-        ["pack-a-punch"]    = Color3.fromRGB(255, 160, 255),
+     ITEM_RARITY = {
+        -- Common (Grey / White)
+        ["apple"]               = Color3.fromRGB(220, 220, 220),
+        ["bull's essence"]      = Color3.fromRGB(220, 220, 220),
+        ["cube of ice"]         = Color3.fromRGB(220, 220, 220),
+        
+        -- Uncommon (Green)
+        ["healing potion"]      = Color3.fromRGB(80, 255, 100),
+        
+        -- Rare (Blue)
+        ["bandage"]             = Color3.fromRGB(80, 160, 255),
+        ["forcefield crystal"]  = Color3.fromRGB(80, 160, 255),
+        ["bomb"]                = Color3.fromRGB(80, 160, 255),
+        ["frog potion"]         = Color3.fromRGB(80, 160, 255),
+        
+        -- Epic (Purple)
+        ["first aid kit"]       = Color3.fromRGB(200, 80, 255),
+        ["boba"]                = Color3.fromRGB(200, 80, 255),
+        ["potion of strength"]  = Color3.fromRGB(200, 80, 255),
+        ["sphere of fury"]      = Color3.fromRGB(200, 80, 255),
+        
+        -- Legendary (Yellow)
+        ["healing potion"]      = Color3.fromRGB(255, 230, 60),
+        ["speed potion"]        = Color3.fromRGB(255, 230, 60),
+        ["lightning potion"]    = Color3.fromRGB(255, 230, 60),
+        
+        -- Godly / Mythical (Red)
+        ["true power"]          = Color3.fromRGB(255, 80, 80),
     },
-}
 
 local STATE = {
     AUTO_LOOT   = false,
