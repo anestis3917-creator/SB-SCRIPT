@@ -12,7 +12,7 @@ local LP                = Players.LocalPlayer
 
 -- ===== FILL =====
 -- Dex → ReplicatedStorage → Remotes → the slap one. moves every update.
-local SLAP_REMOTE_NAME = "Slap"
+local SLAP_REMOTE_NAME = "OnAcrobatSlap"
 -- =================
 
 local CONFIG = {
@@ -76,7 +76,7 @@ local function item_color(name)
 end
 
 -- ================= AURA =================
-local Remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
+local Remotes = ReplicatedStorage:WaitForChild("Events", 10)
 local SlapRemote = Remotes and Remotes:FindFirstChild(SLAP_REMOTE_NAME)
 
 local function build_ring()
