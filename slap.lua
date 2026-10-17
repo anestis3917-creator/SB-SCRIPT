@@ -1,4 +1,4 @@
--- slap.lua — v19.6 (Anti-Slap: CFrame Lock)
+-- slap.lua — v20.0 (Anti-Slap: True Ragdoll Check)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
@@ -40,22 +40,17 @@ local function toggle_anti_slap(on)
         local char = LP.Character
         if not char then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hrp or not hum then return end
+        if not hrp then return end
 
-        -- Glove check: if no tool, you are slapped/ragdolled
-        local tool = char:FindFirstChildOfClass("Tool")
-        local isSlapped = (tool == nil) 
+        -- THE TRUE CHECK: Slap Battles adds "Ragdoll" or "RagdollTrigger" when knocked
+        local isRagdolled = char:FindFirstChild("Ragdoll") or char:FindFirstChild("RagdollTrigger")
 
-        if isSlapped then
-            -- First frame of getting hit: record exactly where we are
+        if isRagdolled then
             if not frozenCFrame then
                 frozenCFrame = hrp.CFrame
             end
-            -- Lock it in place completely (no upward pop, no sliding)
             hrp.CFrame = frozenCFrame
         else
-            -- Glove is back, we are standing up
             frozenCFrame = nil
         end
     end)
@@ -96,7 +91,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -70, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "ollie  •  slap v19.6"
+titleLabel.Text = "ollie  •  slap v20"
 titleLabel.TextColor3 = COLORS.text
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 13
@@ -214,7 +209,7 @@ local function toggle_row(text, key, callback)
 end
 
 section("COMBAT")
-toggle_row("Anti-Slap (CFrame)", "ANTI_SLAP", function(v) toggle_anti_slap(v) end)
+toggle_row("Anti-Slap (Ragdoll)", "ANTI_SLAP", function(v) toggle_anti_slap(v) end)
 
 section("ESP")
 toggle_row("Player ESP", "ESP_PLAYERS", function(v) if not v then for _, d in pairs(playerDrawings) do for _, o in pairs(d) do pcall(function() o.Visible = false end) end end end end)
@@ -337,4 +332,4 @@ closeBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
-print("[ollie] slap v19.6 live.")
+print("[ollie] slap v20 live.")
