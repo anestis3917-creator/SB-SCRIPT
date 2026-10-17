@@ -1,66 +1,23 @@
--- slap.lua — v19.0 (Anti-Slap, Loot, ESP)
+-- slap.lua — v19.1 (Anti-Slap: Velocity Freeze)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
 local UserInputService  = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LP                = Players.LocalPlayer
 
-local CONFIG = {
-    BUS_MARKER_NAME   = "BusModel",
-    ITEMS_FOLDER_NAME = "Items",
-    LOOT_COOLDOWN     = 2.5,
-    LOOT_JITTER       = 0.5,
-    LOOT_RANGE        = 500,
-    ESP_RANGE         = 2500,
-    DEFAULT_ITEM_COLOR = Color3.fromRGB(90, 255, 130),
-    ITEM_RARITY = {
-        ["apple"]              = Color3.fromRGB(220, 220, 220),
-        ["bull's essence"]     = Color3.fromRGB(220, 220, 220),
-        ["cube of ice"]        = Color3.fromRGB(220, 220, 220),
-        ["healing potion"]     = Color3.fromRGB(80, 255, 100),
-        ["bandage"]            = Color3.fromRGB(80, 160, 255),
-        ["forcefield crystal"] = Color3.fromRGB(80, 160, 255),
-        ["bomb"]               = Color3.fromRGB(80, 160, 255),
-        ["frog potion"]        = Color3.fromRGB(80, 160, 255),
-        ["first aid kit"]      = Color3.fromRGB(200, 80, 255),
-        ["boba"]               = Color3.fromRGB(200, 80, 255),
-        ["potion of strength"] = Color3.fromRGB(200, 80, 255),
-        ["sphere of fury"]     = Color3.fromRGB(200, 80, 255),
-        ["speed potion"]       = Color3.fromRGB(255, 230, 60),
-        ["lightning potion"]   = Color3.fromRGB(255, 230, 60),
-        ["true power"]         = Color3.fromRGB(255, 80, 80),
-    },
-}
-
 local STATE = {
-    AUTO_LOOT   = false,
     ESP_PLAYERS = false,
     ESP_ITEMS   = false,
     ANTI_SLAP   = false,
 }
 
-local LOOT_GEN     = 0
-local gloveCache   = {}
-local playerDrawings, itemDrawings = {}, {}
 local antiSlapConnection = nil
+local defaultWalkSpeed = 16
 
 local function get_hrp()
     local c = LP.Character
     return c and c:FindFirstChild("HumanoidRootPart") or nil
-end
-
-local function detect_bus()
-    return Workspace:FindFirstChild(CONFIG.BUS_MARKER_NAME) ~= nil
-end
-
-local function get_items_folder()
-    return Workspace:FindFirstChild(CONFIG.ITEMS_FOLDER_NAME)
-end
-
-local function item_color(name)
-    return CONFIG.ITEM_RARITY[name:lower()] or CONFIG.DEFAULT_ITEM_COLOR
 end
 
 -- ================= ANTI-SLAP =================
@@ -69,8 +26,8 @@ local function toggle_anti_slap(on)
         antiSlapConnection:Disconnect()
         antiSlapConnection = nil
         if LP.Character then
-            local hrp = get_hrp()
-            if hrp then hrp.Anchored = false end
+            local hum = LP.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed = defaultWalkSpeed end
         end
     end
 
@@ -85,14 +42,13 @@ local function toggle_anti_slap(on)
 
         -- Slap Battles uses HumanoidStateType.Physics when you get slapped and ragdolled
         if hum:GetState() == Enum.HumanoidStateType.Physics or char:FindFirstChild("Ragdoll") then
-            -- Anchor them where they stand so they don't get knocked back
-            if not hrp.Anchored then
-                hrp.Anchored = true
-            end
+            -- Freeze them: kill velocity and walkspeed
+            hrp.Velocity = Vector3.new(0, 0, 0)
+            hum.WalkSpeed = 0
         else
-            -- When they stand up, unanchor
-            if hrp.Anchored then
-                hrp.Anchored = false
+            -- When they stand up, give them speed back
+            if hum.WalkSpeed == 0 then
+                hum.WalkSpeed = defaultWalkSpeed
             end
         end
     end)
@@ -133,7 +89,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -70, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "ollie  •  slap v19"
+titleLabel.Text = "ollie  •  slap v19.1"
 titleLabel.TextColor3 = COLORS.text
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 13
@@ -250,52 +206,42 @@ local function toggle_row(text, key, callback)
     return { row = row, set = set, get = function() return on end }
 end
 
-local function action_row(text, callback, danger)
-    local row = Instance.new("TextButton")
-    row.Size = UDim2.new(1, -8, 0, 30)
-    row.BackgroundColor3 = danger and COLORS.danger or COLORS.row
-    row.Text = text
-    row.TextColor3 = COLORS.text
-    row.Font = Enum.Font.GothamBold
-    row.TextSize = 12
-    row.BorderSizePixel = 0
-    row.Parent = content
-    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
-    row.MouseButton1Click:Connect(callback)
-end
-
 section("COMBAT")
 toggle_row("Anti-Slap (No Knockback)", "ANTI_SLAP", function(v) toggle_anti_slap(v) end)
-
-section("LOOT")
-local lootToggle = toggle_row("Auto Loot", "AUTO_LOOT")
-local lootRow = lootToggle.row
-local lootBtn = lootRow:FindFirstChildOfClass("TextButton")
-local lootLbl = lootRow:FindFirstChildOfClass("TextLabel")
-local lootLocked = true
-
-local function set_loot_locked(v)
-    lootLocked = v
-    if lootBtn then lootBtn.Active = not v lootBtn.AutoButtonColor = not v end
-    if lootLbl then lootLbl.TextTransparency = v and 0.5 or 0 end
-end
-set_loot_locked(true)
-
-task.spawn(function()
-    while task.wait(0.25) do
-        local onBus = detect_bus()
-        if onBus and lootLocked then set_loot_locked(false)
-        elseif not onBus and not lootLocked then set_loot_locked(true) if STATE.AUTO_LOOT then lootToggle.set(false) LOOT_GEN = LOOT_GEN + 1 end end
-    end
-end)
-
-action_row("Stop Looting", function() LOOT_GEN = LOOT_GEN + 1 STATE.AUTO_LOOT = false if lootToggle then lootToggle.set(false) end end, true)
 
 section("ESP")
 toggle_row("Player ESP", "ESP_PLAYERS", function(v) if not v then for _, d in pairs(playerDrawings) do for _, o in pairs(d) do pcall(function() o.Visible = false end) end end end end)
 toggle_row("Item ESP", "ESP_ITEMS", function(v) if not v then for _, d in pairs(itemDrawings) do if d.label then pcall(function() d.label.Visible = false end) end if d.box then pcall(function() d.box.Visible = false end) end end end end)
 
 -- ================= ESP DRAWING =================
+local playerDrawings, itemDrawings = {}, {}
+local gloveCache = {}
+local CONFIG = {
+    ITEMS_FOLDER_NAME = "Items",
+    ESP_RANGE = 2500,
+    DEFAULT_ITEM_COLOR = Color3.fromRGB(90, 255, 130),
+    ITEM_RARITY = {
+        ["apple"]              = Color3.fromRGB(220, 220, 220),
+        ["healing potion"]     = Color3.fromRGB(80, 255, 100),
+        ["bandage"]            = Color3.fromRGB(80, 160, 255),
+        ["forcefield crystal"] = Color3.fromRGB(80, 160, 255),
+        ["bomb"]               = Color3.fromRGB(80, 160, 255),
+        ["first aid kit"]      = Color3.fromRGB(200, 80, 255),
+        ["boba"]               = Color3.fromRGB(200, 80, 255),
+        ["potion of strength"] = Color3.fromRGB(200, 80, 255),
+        ["speed potion"]       = Color3.fromRGB(255, 230, 60),
+        ["true power"]         = Color3.fromRGB(255, 80, 80),
+    },
+}
+
+local function get_items_folder()
+    return Workspace:FindFirstChild(CONFIG.ITEMS_FOLDER_NAME)
+end
+
+local function item_color(name)
+    return CONFIG.ITEM_RARITY[name:lower()] or CONFIG.DEFAULT_ITEM_COLOR
+end
+
 local function new_text(color) local t = Drawing.new("Text") t.Size = 16 t.Center = true t.Outline = true t.OutlineColor = Color3.new(0, 0, 0) t.Font = 2 t.Color = color t.Visible = false return t end
 local function new_box(color) local b = Drawing.new("Square") b.Thickness = 1 b.Filled = false b.Color = color b.Visible = false return b end
 
@@ -371,65 +317,17 @@ local function update_item_esp()
     end
 end
 
--- ================= LOOT =================
-local function nearest_tool()
-    local folder = get_items_folder() if not folder then return nil end
-    local hrp = get_hrp() if not hrp then return nil end
-    local my_pos = hrp.Position local best, best_dist = nil, CONFIG.LOOT_RANGE
-    for _, tool in ipairs(folder:GetChildren()) do
-        if tool:IsA("Tool") then
-            local handle = tool:FindFirstChild("Handle")
-            if handle and handle:IsA("BasePart") then
-                local d = (handle.Position - my_pos).Magnitude
-                if d < best_dist then best_dist = d best = tool end
-            end
-        end
-    end
-    return best, best_dist
-end
-
-local function loot_cycle()
-    local my_gen = LOOT_GEN local tool = nearest_tool() if not tool then return false end
-    local handle = tool:FindFirstChild("Handle") if not handle then return false end
-    local char = LP.Character local hrp = char and char:FindFirstChild("HumanoidRootPart") if not hrp then return false end
-    local startPos = hrp.Position local targetPos = handle.Position + Vector3.new(0, 3, 0) local distance = (startPos - targetPos).Magnitude
-    local speed = 75 local timeToTake = distance / speed local t0 = tick()
-    while (tick() - t0) < timeToTake do
-        if my_gen ~= LOOT_GEN or not STATE.AUTO_LOOT then return false end
-        local alpha = (tick() - t0) / timeToTake if alpha > 1 then alpha = 1 end
-        hrp.CFrame = CFrame.new(startPos:Lerp(targetPos, alpha))
-        task.wait()
-    end
-    hrp.CFrame = CFrame.new(targetPos) task.wait(0.2)
-    if my_gen ~= LOOT_GEN or not STATE.AUTO_LOOT then return false end
-    return true
-end
-
-task.spawn(function()
-    while task.wait(0.5) do
-        if STATE.AUTO_LOOT and not detect_bus() then
-            pcall(loot_cycle)
-            local wait_for = CONFIG.LOOT_COOLDOWN + (math.random() * 2 - 1) * CONFIG.LOOT_JITTER
-            local t0 = tick()
-            while (tick() - t0) < wait_for do if not STATE.AUTO_LOOT then break end task.wait(0.1) end
-        end
-    end
-end)
-
 RunService.RenderStepped:Connect(function()
     if STATE.ESP_PLAYERS then pcall(update_player_esp) end
     if STATE.ESP_ITEMS then pcall(update_item_esp) end
 end)
 
 closeBtn.MouseButton1Click:Connect(function()
-    LOOT_GEN = LOOT_GEN + 1 STATE.AUTO_LOOT = false STATE.ANTI_SLAP = false
+    STATE.ANTI_SLAP = false
     if antiSlapConnection then antiSlapConnection:Disconnect() end
     for _, d in pairs(playerDrawings) do for _, o in pairs(d) do pcall(function() o:Remove() end) end end
     for _, d in pairs(itemDrawings) do if d.label then pcall(function() d.label:Remove() end) end if d.box then pcall(function() d.box:Remove() end) end end
     ScreenGui:Destroy()
 end)
 
-LP.CharacterAdded:Connect(function() gloveCache[LP] = nil end)
-Players.PlayerRemoving:Connect(function(p) gloveCache[p] = nil end)
-
-print("[ollie] slap v19 live.")
+print("[ollie] slap v19.1 live.")
