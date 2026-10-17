@@ -78,7 +78,7 @@ end
 -- ================= AURA =================
 local Remotes = ReplicatedStorage:WaitForChild("Events", 10)
 local SlapRemote = Remotes and Remotes:FindFirstChild(SLAP_REMOTE_NAME)
-
+local fireMode = 1
 local function build_ring()
     if AURA_RING and AURA_RING.Parent then return AURA_RING end
     local p = Instance.new("Part")
@@ -89,7 +89,7 @@ local function build_ring()
     p.CanQuery     = false
     p.CanTouch     = false
     p.Transparency = 0.5
-    p.Color        = Color3.fromRGB(0, 200, 120)
+    p.Color = Color3.fromRGB(0, 150, 255)
     p.Material     = Enum.Material.ForceField
     p.Size         = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
     p.Parent       = Workspace
@@ -110,7 +110,16 @@ end
 
 local function fire_slap(target)
     if not SlapRemote then return end
-    pcall(function() SlapRemote:FireServer(target) end)
+    local hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+    pcall(function()
+        if fireMode == 1 then
+            SlapRemote:FireServer(target)
+        elseif fireMode == 2 then
+            SlapRemote:FireServer()
+        elseif fireMode == 3 and hrp then
+            SlapRemote:FireServer(target, hrp.CFrame.LookVector)
+        end
+    end)
 end
 
 local function slap_aura_step()
@@ -119,7 +128,7 @@ local function slap_aura_step()
     if not myHrp then return end
 
     local ring = build_ring()
-    ring.CFrame = CFrame.new(myHrp.Position.X, 1, myHrp.Position.Z)
+  ring.CFrame = CFrame.new(myHrp.Position.X, 0.5, myHrp.Position.Z)
     ring.Size   = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
 
     local now = tick()
@@ -139,6 +148,9 @@ local function slap_aura_step()
                         end
                     end
                     fire_slap(p)
+                     if fireMode == 1 then fireMode = 2
+                    elseif fireMode == 2 then fireMode = 3
+                    else fireMode = 1 end
                 end
             end
         end
