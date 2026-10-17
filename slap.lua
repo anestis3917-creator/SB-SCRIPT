@@ -167,8 +167,8 @@ local COLORS = {
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "_oll_ui"
 ScreenGui.ResetOnSpawn = false
-ScreenGui.IgnoreGuiInset = true
-ScreenGui.DisplayOrder = 999999
+ScreenGui.IgnoreGuiInset = false
+ScreenGui.DisplayOrder = 999
 ScreenGui.Parent = LP:WaitForChild("PlayerGui")
 
 local panel = Instance.new("Frame")
