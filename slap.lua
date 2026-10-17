@@ -1,8 +1,7 @@
--- slap.lua — v15.0 (Stationary Tool Return)
+-- slap.lua — v16.0 (The Touched Method)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
-local UserInputService  = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LP                = Players.LocalPlayer
 
@@ -11,124 +10,102 @@ local STATE = {
     AURA_RADIUS = 8,
 }
 
-local AURA_RING    = nil
-local lastSlap     = {}
+local AURA_PART = nil
+local lastSlap = {}
 local ActiveRemotes = {}
 
-local function get_hrp()
-    local c = LP.Character
-    return c and c:FindFirstChild("HumanoidRootPart") or nil
-end
-
--- Auto-detect all slap remotes
+-- Find every single slap remote in the game
 local function scan_remotes()
     ActiveRemotes = {}
     local folder = ReplicatedStorage:FindFirstChild("Events") or ReplicatedStorage:FindFirstChild("Remotes")
-    if not folder then return end
-    for _, v in pairs(folder:GetChildren()) do
-        if v:IsA("RemoteEvent") then
-            local n = v.Name:lower()
-            if n:find("slap") or n:find("hit") or n:find("swing") or n:find("punch") then
-                table.insert(ActiveRemotes, v)
-            end
-        end
-    end
-end
-
-local function build_ring()
-    if AURA_RING and AURA_RING.Parent then return AURA_RING end
-    local p = Instance.new("Part")
-    p.Name         = "_oll_aura_ring"
-    p.Shape        = Enum.PartType.Cylinder
-    p.Anchored     = true
-    p.CanCollide   = false
-    p.CanQuery     = false
-    p.CanTouch     = false
-    p.Transparency = 0.5
-    p.Color        = Color3.fromRGB(0, 150, 255)
-    p.Material     = Enum.Material.ForceField
-    p.Parent       = Workspace
-    AURA_RING = p
-    return p
-end
-
-local function kill_ring()
-    if AURA_RING then pcall(function() AURA_RING:Destroy() end) end
-    AURA_RING = nil
-end
-
-local function in_circle(targetPos, myPos, r)
-    local a = Vector3.new(targetPos.X, 0, targetPos.Z)
-    local b = Vector3.new(myPos.X, 0, myPos.Z)
-    return (a - b).Magnitude <= r
-end
-
-local function fire_all_slaps(target)
-    -- Swing the glove
-    local char = LP.Character
-    if char then
-        local tool = char:FindFirstChildOfClass("Tool")
-        if tool then pcall(function() tool:Activate() end) end
-    end
-    -- Fire all remotes
-    local hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-    for _, remote in ipairs(ActiveRemotes) do
-        pcall(function()
-            remote:FireServer(target)
-            if hrp then remote:FireServer(target, hrp.CFrame.LookVector) end
-        end)
-    end
-end
-
-local function slap_aura_step()
-    if not STATE.SLAP_AURA then return end
-    local myHrp = get_hrp()
-    if not myHrp then return end
-
-    local ring = build_ring()
-    local rayParams = RaycastParams.new()
-    rayParams.FilterDescendantsInstances = {LP.Character}
-    local ray = Workspace:Raycast(myHrp.Position, Vector3.new(0, -50, 0), rayParams)
-    local floorY = ray and ray.Position.Y or (myHrp.Position.Y - 3)
-    
-    ring.CFrame = CFrame.new(myHrp.Position.X, floorY + 0.1, myHrp.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
-    ring.Size = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
-
-    local now = tick()
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LP and p.Character then
-            local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-            local hum = p.Character:FindFirstChildOfClass("Humanoid")
-            if hrp and hum and hum.Health > 0 and in_circle(hrp.Position, myHrp.Position, STATE.AURA_RADIUS) then
-                local last = lastSlap[p] or 0
-                if now - last >= 0.25 then
-                    lastSlap[p] = now
-                    
-                    -- THE TOOL RETURN TRICK
-                    local char = LP.Character
-                    local tool = char and char:FindFirstChildOfClass("Tool")
-                    
-                    if tool and tool:FindFirstChild("Handle") then
-                        local handle = tool.Handle
-                        local originalCFrame = handle.CFrame
-                        
-                        -- 1. Move the tool handle to the target's chest so the server thinks you are touching
-                        handle.CFrame = hrp.CFrame 
-                        
-                        -- 2. Fire the slaps
-                        fire_all_slaps(p)
-                        
-                        -- 3. Snap the tool back to your hand
-                        handle.CFrame = originalCFrame
-                    else
-                        -- Fallback if no tool equipped
-                        fire_all_slaps(p)
-                    end
+    if folder then
+        for _, v in pairs(folder:GetChildren()) do
+            if v:IsA("RemoteEvent") then
+                local n = v.Name:lower()
+                if n:find("slap") or n:find("hit") or n:find("swing") or n:find("punch") then
+                    table.insert(ActiveRemotes, v)
                 end
             end
         end
     end
 end
+
+-- Build the physical blue disc
+local function build_ring()
+    if AURA_PART and AURA_PART.Parent then return AURA_PART end
+    
+    local p = Instance.new("Part")
+    p.Name         = "_oll_aura_ring"
+    p.Shape        = Enum.PartType.Cylinder
+    p.Anchored     = false -- We let physics hold it
+    p.CanCollide   = false -- Don't block the player
+    p.CanQuery     = false
+    p.Transparency = 0.5
+    p.Color        = Color3.fromRGB(0, 150, 255)
+    p.Material     = Enum.Material.ForceField
+    p.Size         = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
+    p.CFrame       = CFrame.new(0, -100, 0) -- Hide it until ready
+    p.Parent       = Workspace
+    
+    -- Weld it to your feet
+    local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        local weld = Instance.new("WeldConstraint")
+        weld.Part0 = hrp
+        weld.Part1 = p
+        weld.Parent = p
+        p.CFrame = CFrame.new(hrp.Position.X, hrp.Position.Y - 2.8, hrp.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
+    end
+    
+    -- THE TOUCH EVENT
+    p.Touched:Connect(function(hit)
+        if not STATE.SLAP_AURA then return end
+        
+        local character = hit.Parent
+        local player = Players:GetPlayerFromCharacter(character)
+        
+        -- If a player touched it, and it's not you
+        if player and player ~= LP then
+            local now = tick()
+            local last = lastSlap[player] or 0
+            
+            -- Anti-kick cooldown (0.3 seconds)
+            if now - last >= 0.3 then
+                lastSlap[player] = now
+                
+                -- Swing glove
+                local char = LP.Character
+                local tool = char and char:FindFirstChildOfClass("Tool")
+                if tool then pcall(function() tool:Activate() end) end
+                
+                -- Fire all remotes
+                local thrp = character:FindFirstChild("HumanoidRootPart")
+                for _, remote in ipairs(ActiveRemotes) do
+                    pcall(function()
+                        remote:FireServer(player)
+                        if thrp then remote:FireServer(player, thrp.CFrame.LookVector) end
+                    end)
+                end
+            end
+        end
+    end)
+    
+    AURA_PART = p
+    return p
+end
+
+local function kill_ring()
+    if AURA_PART then pcall(function() AURA_PART:Destroy() end) end
+    AURA_PART = nil
+end
+
+-- Monitor respawns to rebuild the ring
+LP.CharacterAdded:Connect(function()
+    kill_ring()
+    lastSlap = {}
+    task.wait(1)
+    if STATE.SLAP_AURA then build_ring() end
+end)
 
 scan_remotes()
 
@@ -151,7 +128,7 @@ Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.BackgroundTransparency = 1
-title.Text = "ollie • slap v15"
+title.Text = "ollie • slap v16"
 title.TextColor3 = Color3.fromRGB(230, 230, 235)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -184,6 +161,7 @@ btn.MouseButton1Click:Connect(function()
     if STATE.SLAP_AURA then
         btn.Text = "Slap Aura: ON"
         btn.BackgroundColor3 = Color3.fromRGB(0, 200, 120)
+        build_ring()
     else
         btn.Text = "Slap Aura: OFF"
         btn.BackgroundColor3 = Color3.fromRGB(36, 36, 44)
@@ -195,10 +173,9 @@ slider.MouseButton1Click:Connect(function()
     STATE.AURA_RADIUS = STATE.AURA_RADIUS + 2
     if STATE.AURA_RADIUS > 16 then STATE.AURA_RADIUS = 4 end
     slider.Text = "Radius: " .. STATE.AURA_RADIUS
+    if AURA_PART then
+        AURA_PART.Size = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
+    end
 end)
 
-RunService.RenderStepped:Connect(function()
-    if STATE.SLAP_AURA then pcall(slap_aura_step) end
-end)
-
-print("[ollie] slap v15 live. remotes found:", #ActiveRemotes)
+print("[ollie] slap v16 live. remotes found:", #ActiveRemotes)
