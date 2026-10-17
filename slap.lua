@@ -1,4 +1,4 @@
--- slap.lua — v16.0 (The Touched Method)
+-- slap.lua — v16.1 (Touched Method: No Weld, No Void)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
@@ -30,32 +30,21 @@ local function scan_remotes()
     end
 end
 
--- Build the physical blue disc
 local function build_ring()
     if AURA_PART and AURA_PART.Parent then return AURA_PART end
     
     local p = Instance.new("Part")
     p.Name         = "_oll_aura_ring"
     p.Shape        = Enum.PartType.Cylinder
-    p.Anchored     = false -- We let physics hold it
-    p.CanCollide   = false -- Don't block the player
+    p.Anchored     = true  -- Anchored so physics doesn't kill you
+    p.CanCollide   = false -- Walk right through it
     p.CanQuery     = false
+    p.CanTouch     = true  -- Enable touch
     p.Transparency = 0.5
     p.Color        = Color3.fromRGB(0, 150, 255)
     p.Material     = Enum.Material.ForceField
     p.Size         = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
-    p.CFrame       = CFrame.new(0, -100, 0) -- Hide it until ready
     p.Parent       = Workspace
-    
-    -- Weld it to your feet
-    local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        local weld = Instance.new("WeldConstraint")
-        weld.Part0 = hrp
-        weld.Part1 = p
-        weld.Parent = p
-        p.CFrame = CFrame.new(hrp.Position.X, hrp.Position.Y - 2.8, hrp.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
-    end
     
     -- THE TOUCH EVENT
     p.Touched:Connect(function(hit)
@@ -64,12 +53,10 @@ local function build_ring()
         local character = hit.Parent
         local player = Players:GetPlayerFromCharacter(character)
         
-        -- If a player touched it, and it's not you
         if player and player ~= LP then
             local now = tick()
             local last = lastSlap[player] or 0
             
-            -- Anti-kick cooldown (0.3 seconds)
             if now - last >= 0.3 then
                 lastSlap[player] = now
                 
@@ -99,12 +86,26 @@ local function kill_ring()
     AURA_PART = nil
 end
 
--- Monitor respawns to rebuild the ring
+-- Update the ring position every frame so it stays at your feet
+RunService.RenderStepped:Connect(function()
+    if STATE.SLAP_AURA then
+        local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            if not AURA_PART or not AURA_PART.Parent then build_ring() end
+            local rayParams = RaycastParams.new()
+            rayParams.FilterDescendantsInstances = {LP.Character}
+            local ray = Workspace:Raycast(hrp.Position, Vector3.new(0, -50, 0), rayParams)
+            local floorY = ray and ray.Position.Y or (hrp.Position.Y - 3)
+            
+            AURA_PART.CFrame = CFrame.new(hrp.Position.X, floorY + 0.1, hrp.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
+            AURA_PART.Size = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
+        end
+    end
+end)
+
 LP.CharacterAdded:Connect(function()
     kill_ring()
     lastSlap = {}
-    task.wait(1)
-    if STATE.SLAP_AURA then build_ring() end
 end)
 
 scan_remotes()
@@ -128,7 +129,7 @@ Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.BackgroundTransparency = 1
-title.Text = "ollie • slap v16"
+title.Text = "ollie • slap v16.1"
 title.TextColor3 = Color3.fromRGB(230, 230, 235)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -173,9 +174,6 @@ slider.MouseButton1Click:Connect(function()
     STATE.AURA_RADIUS = STATE.AURA_RADIUS + 2
     if STATE.AURA_RADIUS > 16 then STATE.AURA_RADIUS = 4 end
     slider.Text = "Radius: " .. STATE.AURA_RADIUS
-    if AURA_PART then
-        AURA_PART.Size = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
-    end
 end)
 
-print("[ollie] slap v16 live. remotes found:", #ActiveRemotes)
+print("[ollie] slap v16.1 live. remotes found:", #ActiveRemotes)
