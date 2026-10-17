@@ -83,7 +83,7 @@ local function build_ring()
     if AURA_RING and AURA_RING.Parent then return AURA_RING end
     local p = Instance.new("Part")
     p.Name         = "_oll_aura_ring"
-    p.Shape        = Enum.PartType.Cylinder
+    p.Shape = Enum.PartType.Ball
     p.Anchored     = true
     p.CanCollide   = false
     p.CanQuery     = false
@@ -91,7 +91,7 @@ local function build_ring()
     p.Transparency = 0.5
     p.Color = Color3.fromRGB(0, 150, 255)
     p.Material     = Enum.Material.ForceField
-    p.Size         = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
+
     p.Parent       = Workspace
     AURA_RING = p
     return p
@@ -128,9 +128,8 @@ local function slap_aura_step()
     if not myHrp then return end
 
     local ring = build_ring()
- ring.CFrame = CFrame.new(myHrp.Position.X, 0.5, myHrp.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
-    ring.Size   = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
-
+    ring.CFrame = myHrp.CFrame * CFrame.new(0, -2.5, 0)
+    ring.Size = Vector3.new(STATE.AURA_RADIUS * 2, 1, STATE.AURA_RADIUS * 2)
     local now = tick()
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LP and p.Character then
@@ -141,17 +140,6 @@ local function slap_aura_step()
                 local last = lastSlap[p] or 0
                 if now - last >= 0.12 then
                     lastSlap[p] = now
-                        if STATE.STEP_IN then
-                            local dir = (hrp.Position - myHrp.Position)
-                            if dir.Magnitude > 5 then
-                                local goal = CFrame.new(hrp.Position - dir.Unit * 4)
-                                -- unanchor HRP for the tween, anchor after
-                                local wasAnchored = myHrp.Anchored
-                                myHrp.Anchored = false
-                                TweenService:Create(myHrp, TweenInfo.new(0.05), {CFrame = goal}):Play()
-                                task.delay(0.05, function() myHrp.Anchored = wasAnchored end)
-                            end
-                        end
                     fire_slap(p)
                      if fireMode == 1 then fireMode = 2
                     elseif fireMode == 2 then fireMode = 3
