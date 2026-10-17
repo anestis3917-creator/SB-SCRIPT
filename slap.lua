@@ -83,7 +83,7 @@ local function build_ring()
     if AURA_RING and AURA_RING.Parent then return AURA_RING end
     local p = Instance.new("Part")
     p.Name         = "_oll_aura_ring"
-    p.Shape = Enum.PartType.Ball
+   Enum.PartType.Cylinder
     p.Anchored     = true
     p.CanCollide   = false
     p.CanQuery     = false
@@ -128,8 +128,8 @@ local function slap_aura_step()
     if not myHrp then return end
 
     local ring = build_ring()
-    ring.CFrame = myHrp.CFrame * CFrame.new(0, -2.5, 0)
-    ring.Size = Vector3.new(STATE.AURA_RADIUS * 2, 1, STATE.AURA_RADIUS * 2)
+    ring.CFrame = myHrp.CFrame * CFrame.new(0, -2.5, 0) * CFrame.Angles(0, 0, math.rad(90))
+    ring.Size = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
     local now = tick()
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LP and p.Character then
