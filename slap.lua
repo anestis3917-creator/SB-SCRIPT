@@ -1,4 +1,4 @@
--- slap.lua — v21.0 (Pure State Anchor)
+-- slap.lua — v22.0 (Anti-Slap: Velocity Spike Freeze)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
@@ -13,6 +13,7 @@ local STATE = {
 }
 
 local antiSlapConnection = nil
+local anchorEndTime = 0
 
 local function get_hrp()
     local c = LP.Character
@@ -24,6 +25,7 @@ local function toggle_anti_slap(on)
     if antiSlapConnection then
         antiSlapConnection:Disconnect()
         antiSlapConnection = nil
+        anchorEndTime = 0
         local char = LP.Character
         if char then
             local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -33,23 +35,23 @@ local function toggle_anti_slap(on)
 
     if not on then return end
 
-    antiSlapConnection = RunService.RenderStepped:Connect(function()
+    antiSlapConnection = RunService.Heartbeat:Connect(function()
         local char = LP.Character
         if not char then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hrp or not hum then return end
+        if not hrp then return end
 
-        local state = hum:GetState()
+        local now = tick()
+        local vel = hrp.Velocity.Magnitude
         
-        -- ONLY freeze if the game puts you in a knocked/ragdoll state
-        if state == Enum.HumanoidStateType.Physics or state == Enum.HumanoidStateType.GettingUp then
-            if not hrp.Anchored then
-                hrp.Anchored = true
-            end
+        -- If velocity spikes above 50, we got slapped/launched
+        if vel > 50 then
+            -- Anchor us and set a 0.5 second timer
+            hrp.Anchored = true
+            anchorEndTime = now + 0.5
         else
-            -- The absolute SECOND you are back to normal, unanchor so you can walk
-            if hrp.Anchored then
+            -- If we are anchored but the timer has passed, unanchor
+            if hrp.Anchored and now > anchorEndTime then
                 hrp.Anchored = false
             end
         end
@@ -91,7 +93,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -70, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "ollie  •  slap v21"
+titleLabel.Text = "ollie  •  slap v22"
 titleLabel.TextColor3 = COLORS.text
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 13
@@ -209,7 +211,7 @@ local function toggle_row(text, key, callback)
 end
 
 section("COMBAT")
-toggle_row("Anti-Slap (Freeze)", "ANTI_SLAP", function(v) toggle_anti_slap(v) end)
+toggle_row("Anti-Slap (Velocity)", "ANTI_SLAP", function(v) toggle_anti_slap(v) end)
 
 section("ESP")
 toggle_row("Player ESP", "ESP_PLAYERS", function(v) if not v then for _, d in pairs(playerDrawings) do for _, o in pairs(d) do pcall(function() o.Visible = false end) end end end end)
@@ -332,4 +334,4 @@ closeBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
-print("[ollie] slap v21 live.")
+print("[ollie] slap v22 live.")
