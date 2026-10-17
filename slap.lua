@@ -1,4 +1,4 @@
--- slap.lua — v20.0 (Anti-Slap: True Ragdoll Check)
+-- slap.lua — v20.1 (True Anti-Slap: 0.5s Anchor)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
@@ -13,7 +13,7 @@ local STATE = {
 }
 
 local antiSlapConnection = nil
-local frozenCFrame = nil
+local lastSlapTime = 0
 
 local function get_hrp()
     local c = LP.Character
@@ -25,8 +25,6 @@ local function toggle_anti_slap(on)
     if antiSlapConnection then
         antiSlapConnection:Disconnect()
         antiSlapConnection = nil
-        frozenCFrame = nil
-        -- Ensure we are unanchored if toggled off mid-freeze
         local char = LP.Character
         if char then
             local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -40,18 +38,27 @@ local function toggle_anti_slap(on)
         local char = LP.Character
         if not char then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hrp or not hum then return end
 
-        -- THE TRUE CHECK: Slap Battles adds "Ragdoll" or "RagdollTrigger" when knocked
-        local isRagdolled = char:FindFirstChild("Ragdoll") or char:FindFirstChild("RagdollTrigger")
+        local tool = char:FindFirstChildOfClass("Tool")
+        local state = hum:GetState()
+        
+        -- Trigger if no glove OR getting up OR physics
+        local isSlapped = (tool == nil) or (state == Enum.HumanoidStateType.GettingUp) or (state == Enum.HumanoidStateType.Physics)
 
-        if isRagdolled then
-            if not frozenCFrame then
-                frozenCFrame = hrp.CFrame
+        if isSlapped then
+            -- Record the time we got slapped
+            lastSlapTime = tick()
+            -- Anchor to stop the pop and slide
+            if not hrp.Anchored then
+                hrp.Anchored = true
             end
-            hrp.CFrame = frozenCFrame
         else
-            frozenCFrame = nil
+            -- Unanchor if 0.5 seconds have passed since the last slap frame
+            if hrp.Anchored and (tick() - lastSlapTime > 0.5) then
+                hrp.Anchored = false
+            end
         end
     end)
 end
@@ -91,7 +98,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -70, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "ollie  •  slap v20"
+titleLabel.Text = "ollie  •  slap v20.1"
 titleLabel.TextColor3 = COLORS.text
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 13
@@ -209,7 +216,7 @@ local function toggle_row(text, key, callback)
 end
 
 section("COMBAT")
-toggle_row("Anti-Slap (Ragdoll)", "ANTI_SLAP", function(v) toggle_anti_slap(v) end)
+toggle_row("Anti-Slap (Freeze)", "ANTI_SLAP", function(v) toggle_anti_slap(v) end)
 
 section("ESP")
 toggle_row("Player ESP", "ESP_PLAYERS", function(v) if not v then for _, d in pairs(playerDrawings) do for _, o in pairs(d) do pcall(function() o.Visible = false end) end end end end)
@@ -332,4 +339,4 @@ closeBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
-print("[ollie] slap v20 live.")
+print("[ollie] slap v20.1 live.")
