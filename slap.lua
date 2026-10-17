@@ -1,4 +1,4 @@
--- slap.lua — v16.1 (Touched Method: No Weld, No Void)
+-- slap.lua — v17.0 (Physical Hitbox)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
@@ -14,7 +14,6 @@ local AURA_PART = nil
 local lastSlap = {}
 local ActiveRemotes = {}
 
--- Find every single slap remote in the game
 local function scan_remotes()
     ActiveRemotes = {}
     local folder = ReplicatedStorage:FindFirstChild("Events") or ReplicatedStorage:FindFirstChild("Remotes")
@@ -36,17 +35,15 @@ local function build_ring()
     local p = Instance.new("Part")
     p.Name         = "_oll_aura_ring"
     p.Shape        = Enum.PartType.Cylinder
-    p.Anchored     = true  -- Anchored so physics doesn't kill you
-    p.CanCollide   = false -- Walk right through it
-    p.CanQuery     = false
-    p.CanTouch     = true  -- Enable touch
+    p.Anchored     = true
+    p.CanCollide   = true -- MUST be true for Touched to fire
+    p.CanTouch     = true
     p.Transparency = 0.5
     p.Color        = Color3.fromRGB(0, 150, 255)
     p.Material     = Enum.Material.ForceField
     p.Size         = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
     p.Parent       = Workspace
     
-    -- THE TOUCH EVENT
     p.Touched:Connect(function(hit)
         if not STATE.SLAP_AURA then return end
         
@@ -60,12 +57,10 @@ local function build_ring()
             if now - last >= 0.3 then
                 lastSlap[player] = now
                 
-                -- Swing glove
                 local char = LP.Character
                 local tool = char and char:FindFirstChildOfClass("Tool")
                 if tool then pcall(function() tool:Activate() end) end
                 
-                -- Fire all remotes
                 local thrp = character:FindFirstChild("HumanoidRootPart")
                 for _, remote in ipairs(ActiveRemotes) do
                     pcall(function()
@@ -86,7 +81,7 @@ local function kill_ring()
     AURA_PART = nil
 end
 
--- Update the ring position every frame so it stays at your feet
+-- Update the ring position every frame so it stays flat on the floor
 RunService.RenderStepped:Connect(function()
     if STATE.SLAP_AURA then
         local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
@@ -129,7 +124,7 @@ Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.BackgroundTransparency = 1
-title.Text = "ollie • slap v16.1"
+title.Text = "ollie • slap v17"
 title.TextColor3 = Color3.fromRGB(230, 230, 235)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -176,4 +171,4 @@ slider.MouseButton1Click:Connect(function()
     slider.Text = "Radius: " .. STATE.AURA_RADIUS
 end)
 
-print("[ollie] slap v16.1 live. remotes found:", #ActiveRemotes)
+print("[ollie] slap v17 live. remotes found:", #ActiveRemotes)
