@@ -519,47 +519,85 @@ local function get_glove(p)
     return result
 end
 
-local function update_player_esp()
+local function update_item_esp()
     local cam = Workspace.CurrentCamera
     if not cam then return end
     local my_hrp = get_hrp()
     local my_pos = my_hrp and my_hrp.Position
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LP then
-            local char = p.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            local head = char and char:FindFirstChild("Head")
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            local vis = false
-            if hrp and head and hum and hum.Health > 0 then
-                local dist = my_pos and (hrp.Position - my_pos).Magnitude or 0
+    if not my_pos then return end
+    local folder = get_items_folder()
+    if not folder then
+        for _, d in pairs(itemDrawings) do
+            if d.label then d.label.Visible = false end
+            if d.box then d.box.Visible = false end
+        end
+        return
+    end
+    local seen = {}
+    
+    for _, tool in ipairs(folder:GetChildren()) do
+        if tool:IsA("Tool") then
+            local handle = tool:FindFirstChild("Handle")
+            if handle and handle:IsA("BasePart") then
+                local dist = (handle.Position - my_pos).Magnitude
                 if dist <= CONFIG.ESP_RANGE then
-                    local sp, on = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 2, 0))
+                    
+                    local sp, on = cam:WorldToViewportPoint(handle.Position)
                     if on then
-                        if not playerDrawings[p] then
-                            playerDrawings[p] = {
-                                name = new_text(Color3.fromRGB(255, 90, 90)),
-                                glove = new_text(Color3.fromRGB(255, 220, 80)),
-                            }
+                        local col = item_color(tool.Name)
+                        seen[tool] = true
+                        
+                        if not itemDrawings[tool] then
+                            local l = new_text(col)
+                            l.Size = 14
+                            local b = new_box(col)
+                            b.Thickness = 2
+                            itemDrawings[tool] = { label = l, box = b }
                         end
-                        local d = playerDrawings[p]
-                        d.name.Text = p.Name
-                        d.name.Position = Vector2.new(sp.X, sp.Y)
-                        d.name.Visible = true
-                        d.glove.Text = "[" .. get_glove(p) .. "]"
-                        d.glove.Position = Vector2.new(sp.X, sp.Y + 18)
-                        d.glove.Visible = true
-                        vis = true
+                        
+                        local d = itemDrawings[tool]
+                        d.label.Color = col
+                        d.box.Color = col
+                        
+                        -- Calculate real 3D corners of the handle
+                        local cf = handle.CFrame
+                        local size = handle.Size
+                        local half = size / 2
+                        
+                        -- Top front and bottom back corners to get height
+                        local posTop = cf * CFrame.new(0, half.Y, 0)
+                        local posBot = cf * CFrame.new(0, -half.Y, 0)
+                        
+                        local spTop, onTop = cam:WorldToViewportPoint(posTop.Position)
+                        local spBot, onBot = cam:WorldToViewportPoint(posBot.Position)
+                        
+                        if onTop and onBot then
+                            local h = math.abs(spBot.Y - spTop.Y)
+                            local w = h * 0.8
+                            
+                            local boxTop = math.min(spTop.Y, spBot.Y)
+                            
+                            d.box.Size = Vector2.new(w, h)
+                            d.box.Position = Vector2.new(spTop.X - w/2, boxTop)
+                            d.box.Visible = true
+                            
+                            d.label.Text = tool.Name
+                            d.label.Position = Vector2.new(spTop.X, boxTop - 16)
+                            d.label.Visible = true
+                        end
                     end
                 end
             end
-            if not vis and playerDrawings[p] then
-                for _, o in pairs(playerDrawings[p]) do o.Visible = false end
-            end
+        end
+    end
+    for tool, d in pairs(itemDrawings) do
+        if not seen[tool] or not tool.Parent then
+            if d.label then pcall(function() d.label:Remove() end) end
+            if d.box then pcall(function() d.box:Remove() end) end
+            itemDrawings[tool] = nil
         end
     end
 end
-
 local function item_color(name)
     local lower = name:lower()
     return CONFIG.ITEM_RARITY[lower] or CONFIG.DEFAULT_ITEM_COLOR
