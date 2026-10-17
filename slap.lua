@@ -1,6 +1,4 @@
--- slap.lua — v9.4 (Full UI, Loot, ESP, Flat Aura, No Teleport)
--- usage: loadstring(game:HttpGet("URL?v="..tick()))()
-
+-- slap.lua — v9.4 PC (Full UI, Aura, Loot, ESP)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
@@ -15,7 +13,7 @@ local CONFIG = {
     LOOT_COOLDOWN     = 3.0,
     LOOT_JITTER       = 0.5,
     LOOT_RANGE        = 500,
-    ESP_RANGE         = 5000,
+    ESP_RANGE         = 2000, -- Lowered from 5000 to stop PC crashes
     DEFAULT_ITEM_COLOR = Color3.fromRGB(90, 255, 130),
     ITEM_RARITY = {
         ["apple"]              = Color3.fromRGB(220, 220, 220),
@@ -140,11 +138,9 @@ end
 
 -- ================= UI =================
 local COLORS = {
-    bg        = Color3.fromRGB(18, 18, 22), panel     = Color3.fromRGB(26, 26, 32),
-    row       = Color3.fromRGB(36, 36, 44), accent    = Color3.fromRGB(0, 200, 120),
-    accentOff = Color3.fromRGB(60, 60, 70), text      = Color3.fromRGB(230, 230, 235),
-    textDim   = Color3.fromRGB(130, 130, 140), track     = Color3.fromRGB(45, 45, 54),
-    danger    = Color3.fromRGB(200, 70, 70),
+    bg = Color3.fromRGB(18, 18, 22), panel = Color3.fromRGB(26, 26, 32), row = Color3.fromRGB(36, 36, 44),
+    accent = Color3.fromRGB(0, 200, 120), accentOff = Color3.fromRGB(60, 60, 70), text = Color3.fromRGB(230, 230, 235),
+    textDim = Color3.fromRGB(130, 130, 140), track = Color3.fromRGB(45, 45, 54), danger = Color3.fromRGB(200, 70, 70),
 }
 
 local ScreenGui = Instance.new("ScreenGui")
