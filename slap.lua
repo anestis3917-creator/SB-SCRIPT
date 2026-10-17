@@ -1,4 +1,4 @@
--- slap.lua — v19.1 (Anti-Slap: Velocity Freeze)
+-- slap.lua — v19.2 (Anti-Slap: True State Check)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
@@ -40,8 +40,8 @@ local function toggle_anti_slap(on)
         local hum = char:FindFirstChildOfClass("Humanoid")
         if not hrp or not hum then return end
 
-        -- Slap Battles uses HumanoidStateType.Physics when you get slapped and ragdolled
-        if hum:GetState() == Enum.HumanoidStateType.Physics or char:FindFirstChild("Ragdoll") then
+        -- ONLY check the Humanoid state. No Ragdoll tag checking.
+        if hum:GetState() == Enum.HumanoidStateType.Physics then
             -- Freeze them: kill velocity and walkspeed
             hrp.Velocity = Vector3.new(0, 0, 0)
             hum.WalkSpeed = 0
@@ -89,7 +89,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -70, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "ollie  •  slap v19.1"
+titleLabel.Text = "ollie  •  slap v19.2"
 titleLabel.TextColor3 = COLORS.text
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 13
@@ -330,4 +330,4 @@ closeBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
-print("[ollie] slap v19.1 live.")
+print("[ollie] slap v19.2 live.")
