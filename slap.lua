@@ -688,17 +688,38 @@ local function loot_cycle()
     if not tool then return false end
     local handle = tool:FindFirstChild("Handle")
     if not handle then return false end
+    
     local char = LP.Character
-    if not char then return false end
-    pcall(function()
-        char:PivotTo(CFrame.new(handle.Position + Vector3.new(0, 3, 0)))
-    end)
-    task.wait(0.25)
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    -- Fly to the item smoothly
+    local startPos = hrp.Position
+    local targetPos = handle.Position + Vector3.new(0, 3, 0)
+    local distance = (startPos - targetPos).Magnitude
+    
+    -- speed: roughly 75 studs per second (fast but not instant)
+    local speed = 75
+    local timeToTake = distance / speed
+    local t0 = tick()
+    
+    while (tick() - t0) < timeToTake do
+        if my_gen ~= LOOT_GEN or not STATE.AUTO_LOOT then return false end
+        local alpha = (tick() - t0) / timeToTake
+        if alpha > 1 then alpha = 1 end
+        
+        hrp.CFrame = CFrame.new(startPos:Lerp(targetPos, alpha))
+        task.wait()
+    end
+    
+    hrp.CFrame = CFrame.new(targetPos)
+    
+    -- wait for game to register touch/pickup
+    task.wait(0.2)
     if my_gen ~= LOOT_GEN or not STATE.AUTO_LOOT then return false end
-    task.wait(0.1)
+    
     return true
 end
-
 task.spawn(function()
     while task.wait(0.5) do
         if STATE.AUTO_LOOT and not detect_bus() then
