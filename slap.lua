@@ -12,8 +12,8 @@ local STATE = {
     ANTI_SLAP   = false,
 }
 
-local antiSlapConnection = nil
-local anchorEndTime = 0
+local isFrozen = false
+local freezeEndTime = 0
 
 local function get_hrp()
     local c = LP.Character
@@ -21,38 +21,54 @@ local function get_hrp()
 end
 
 -- ================= ANTI-SLAP =================
-local function toggle_anti_slap(on)
+local function toggle_anti_slap(on)local function toggle_anti_slap(on)
     if antiSlapConnection then
         antiSlapConnection:Disconnect()
         antiSlapConnection = nil
-        anchorEndTime = 0
+    end
+
+    if not on then
         local char = LP.Character
         if char then
             local hrp = char:FindFirstChild("HumanoidRootPart")
-            if hrp then hrp.Anchored = false end
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hrp then 
+                hrp.Anchored = false 
+                hrp.Velocity = Vector3.new(0,0,0)
+            end
+            if hum then 
+                hum.WalkSpeed = 16 
+                hum.JumpPower = 50
+                hum:ChangeState(Enum.HumanoidStateType.Running)
+            end
         end
+        return
     end
-
-    if not on then return end
 
     antiSlapConnection = RunService.Heartbeat:Connect(function()
         local char = LP.Character
         if not char then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hrp or not hum then return end
 
         local now = tick()
         local vel = hrp.Velocity.Magnitude
         
-        -- If velocity spikes above 50, we got slapped/launched
-        if vel > 50 then
-            -- Anchor us and set a 0.5 second timer
+        if vel > 50 and not isFrozen then
+            isFrozen = true
             hrp.Anchored = true
-            anchorEndTime = now + 0.5
-        else
-            -- If we are anchored but the timer has passed, unanchor
-            if hrp.Anchored and now > anchorEndTime then
-                hrp.Anchored = false
+            freezeEndTime = now + 0.4
+        end
+
+        if isFrozen and now > freezeEndTime then
+            isFrozen = false
+            hrp.Anchored = false
+            hrp.Velocity = Vector3.new(0, 0, 0)
+            hum:ChangeState(Enum.HumanoidStateType.Running)
+        end
+    end)
+end
             end
         end
     end)
