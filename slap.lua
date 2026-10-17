@@ -1,4 +1,4 @@
--- slap.lua — v19.4 (Pure Velocity Freeze)
+-- slap.lua — v19.6 (Anti-Slap: CFrame Lock)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
@@ -13,6 +13,7 @@ local STATE = {
 }
 
 local antiSlapConnection = nil
+local frozenCFrame = nil
 
 local function get_hrp()
     local c = LP.Character
@@ -24,16 +25,18 @@ local function toggle_anti_slap(on)
     if antiSlapConnection then
         antiSlapConnection:Disconnect()
         antiSlapConnection = nil
+        frozenCFrame = nil
+        -- Ensure we are unanchored if toggled off mid-freeze
         local char = LP.Character
         if char then
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then hum.WalkSpeed = 16 end
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then hrp.Anchored = false end
         end
     end
 
     if not on then return end
 
-    antiSlapConnection = RunService.Heartbeat:Connect(function()
+    antiSlapConnection = RunService.RenderStepped:Connect(function()
         local char = LP.Character
         if not char then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -45,14 +48,15 @@ local function toggle_anti_slap(on)
         local isSlapped = (tool == nil) 
 
         if isSlapped then
-            -- Kill velocity ONLY. Do not anchor.
-            hrp.Velocity = Vector3.new(0, 0, 0)
-            hum.WalkSpeed = 0
-        else
-            -- Unfreeze
-            if hum.WalkSpeed == 0 then
-                hum.WalkSpeed = 16
+            -- First frame of getting hit: record exactly where we are
+            if not frozenCFrame then
+                frozenCFrame = hrp.CFrame
             end
+            -- Lock it in place completely (no upward pop, no sliding)
+            hrp.CFrame = frozenCFrame
+        else
+            -- Glove is back, we are standing up
+            frozenCFrame = nil
         end
     end)
 end
@@ -92,7 +96,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -70, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "ollie  •  slap v19.4"
+titleLabel.Text = "ollie  •  slap v19.6"
 titleLabel.TextColor3 = COLORS.text
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 13
@@ -210,7 +214,7 @@ local function toggle_row(text, key, callback)
 end
 
 section("COMBAT")
-toggle_row("Anti-Slap (Velocity)", "ANTI_SLAP", function(v) toggle_anti_slap(v) end)
+toggle_row("Anti-Slap (CFrame)", "ANTI_SLAP", function(v) toggle_anti_slap(v) end)
 
 section("ESP")
 toggle_row("Player ESP", "ESP_PLAYERS", function(v) if not v then for _, d in pairs(playerDrawings) do for _, o in pairs(d) do pcall(function() o.Visible = false end) end end end end)
@@ -333,4 +337,4 @@ closeBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
-print("[ollie] slap v19.4 live.")
+print("[ollie] slap v19.6 live.")
