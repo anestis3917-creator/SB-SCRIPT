@@ -1,4 +1,4 @@
--- slap.lua — v9.7 (Auto-Detect Glove, Swing Anim, True Reach)
+-- slap.lua — v9.8 (Blink Slap: Teleport, Slap, Return)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
@@ -15,23 +15,6 @@ local CONFIG = {
     LOOT_RANGE        = 500,
     ESP_RANGE         = 2000,
     DEFAULT_ITEM_COLOR = Color3.fromRGB(90, 255, 130),
-    ITEM_RARITY = {
-        ["apple"]              = Color3.fromRGB(220, 220, 220),
-        ["bull's essence"]     = Color3.fromRGB(220, 220, 220),
-        ["cube of ice"]        = Color3.fromRGB(220, 220, 220),
-        ["healing potion"]     = Color3.fromRGB(80, 255, 100),
-        ["bandage"]            = Color3.fromRGB(80, 160, 255),
-        ["forcefield crystal"] = Color3.fromRGB(80, 160, 255),
-        ["bomb"]               = Color3.fromRGB(80, 160, 255),
-        ["frog potion"]        = Color3.fromRGB(80, 160, 255),
-        ["first aid kit"]      = Color3.fromRGB(200, 80, 255),
-        ["boba"]               = Color3.fromRGB(200, 80, 255),
-        ["potion of strength"] = Color3.fromRGB(200, 80, 255),
-        ["sphere of fury"]     = Color3.fromRGB(200, 80, 255),
-        ["speed potion"]       = Color3.fromRGB(255, 230, 60),
-        ["lightning potion"]   = Color3.fromRGB(255, 230, 60),
-        ["true power"]         = Color3.fromRGB(255, 80, 80),
-    },
 }
 
 local STATE = {
@@ -39,7 +22,7 @@ local STATE = {
     ESP_PLAYERS = false,
     ESP_ITEMS   = false,
     SLAP_AURA   = false,
-    AURA_RADIUS = 6, -- Small radius so the server doesn't reject it
+    AURA_RADIUS = 6, -- Default is smaller now
 }
 
 local LOOT_GEN     = 0
@@ -64,12 +47,13 @@ local function get_items_folder()
 end
 
 local function item_color(name)
-    return CONFIG.ITEM_RARITY[name:lower()] or CONFIG.DEFAULT_ITEM_COLOR
+    return CONFIG.DEFAULT_ITEM_COLOR
 end
 
 -- ================= AURA =================
 local Remotes = ReplicatedStorage:WaitForChild("Events", 10)
-local SlapRemote = Remotes and Remotes:FindFirstChild("OnAcrobatSlap")
+-- We will try both the default and the Dual remote
+local SlapRemote = Remotes and (Remotes:FindFirstChild("OnAcrobatSlap") or Remotes:FindFirstChild("OnDualSlap"))
 
 local function build_ring()
     if AURA_RING and AURA_RING.Parent then return AURA_RING end
@@ -139,18 +123,20 @@ local function slap_aura_step()
             local hum = p.Character:FindFirstChildOfClass("Humanoid")
             if hrp and hum and hum.Health > 0 and in_circle(hrp.Position, myHrp.Position, STATE.AURA_RADIUS) then
                 local last = lastSlap[p] or 0
-                if now - last >= 0.12 then
+                if now - last >= 0.5 then -- Slower cooldown because we are teleporting
                     lastSlap[p] = now
                     
-                    local char = LP.Character
-                    if char then
-                        local hb = char:FindFirstChild("Hitbox") or char:FindFirstChild("HumanoidRootPart")
-                        if hb and hb.Size.X < 10 then
-                            hb.Size = Vector3.new(15, 15, 15)
-                        end
-                    end
+                    -- BLINK SLAP: Teleport near, slap, teleport back
+                    local oldPos = myHrp.CFrame
+                    local dir = (hrp.Position - myHrp.Position)
+                    local blinkPos = CFrame.new(hrp.Position - dir.Unit * 3) * oldPos.Rotation
                     
+                    myHrp.CFrame = blinkPos
+                    task.wait(0.05) -- Let server register the position
                     fire_slap(p)
+                    task.wait(0.05)
+                    myHrp.CFrame = oldPos -- Snap back
+                    
                     if fireMode == 1 then fireMode = 2 elseif fireMode == 2 then fireMode = 3 else fireMode = 1 end
                 end
             end
@@ -158,7 +144,7 @@ local function slap_aura_step()
     end
 end
 
--- UI CODE STARTS HERE (Same as before)
+-- UI CODE
 local COLORS = {
     bg = Color3.fromRGB(18, 18, 22), panel = Color3.fromRGB(26, 26, 32), row = Color3.fromRGB(36, 36, 44),
     accent = Color3.fromRGB(0, 200, 120), accentOff = Color3.fromRGB(60, 60, 70), text = Color3.fromRGB(230, 230, 235),
@@ -193,7 +179,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -70, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "ollie  •  slap v9.7"
+titleLabel.Text = "ollie  •  slap v9.8"
 titleLabel.TextColor3 = COLORS.text
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 13
@@ -417,7 +403,7 @@ end
 
 section("COMBAT")
 toggle_row("Slap Aura", "SLAP_AURA", function(v) if not v then kill_ring() end end)
-slider_row("Aura Radius", 4, 20, STATE.AURA_RADIUS, function(v) STATE.AURA_RADIUS = v end)
+slider_row("Aura Radius", 4, 10, STATE.AURA_RADIUS, function(v) STATE.AURA_RADIUS = v end)
 
 section("LOOT")
 local lootToggle
@@ -586,4 +572,4 @@ end)
 LP.CharacterAdded:Connect(function() gloveCache[LP] = nil lastSlap = {} task.wait(0.5) if STATE.SLAP_AURA then build_ring() end end)
 Players.PlayerRemoving:Connect(function(p) gloveCache[p] = nil lastSlap[p] = nil end)
 
-print("[ollie] slap v9.7 live. remote=", SlapRemote ~= nil)
+print("[ollie] slap v9.8 live. remote=", SlapRemote ~= nil)
