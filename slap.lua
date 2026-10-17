@@ -1,21 +1,19 @@
--- slap.lua — v11.0 (Guaranteed Slap: Tween Blink)
+-- slap.lua — v11.5 (Stationary Slap: Big Hitbox, No Move)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
 local UserInputService  = game:GetService("UserInputService")
-local TweenService      = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LP                = Players.LocalPlayer
 
 local STATE = {
     SLAP_AURA   = false,
-    AURA_RADIUS = 6,
+    AURA_RADIUS = 8,
 }
 
 local AURA_RING    = nil
 local lastSlap     = {}
 local fireMode     = 1
-local isSlapping   = false
 
 local function get_hrp()
     local c = LP.Character
@@ -65,7 +63,7 @@ local function fire_slap(target)
 end
 
 local function slap_aura_step()
-    if not STATE.SLAP_AURA or isSlapping then return end
+    if not STATE.SLAP_AURA then return end
     local myHrp = get_hrp()
     if not myHrp then return end
 
@@ -85,37 +83,20 @@ local function slap_aura_step()
             local hum = p.Character:FindFirstChildOfClass("Humanoid")
             if hrp and hum and hum.Health > 0 and in_circle(hrp.Position, myHrp.Position, STATE.AURA_RADIUS) then
                 local last = lastSlap[p] or 0
-                if now - last >= 0.3 then -- 0.3s cooldown so we don't spam tweens
+                if now - last >= 0.12 then
                     lastSlap[p] = now
-                    isSlapping = true
                     
-                    -- 1. Save our current position
-                    local originalCFrame = myHrp.CFrame
+                    -- EXPAND HITBOX silently (this is what makes the server accept it)
+                    local char = LP.Character
+                    if char then
+                        local hitbox = char:FindFirstChild("Hitbox") or char:FindFirstChild("SlapHitbox") or char:FindFirstChild("HumanoidRootPart")
+                        if hitbox then
+                            hitbox.Size = Vector3.new(STATE.AURA_RADIUS * 2, 10, STATE.AURA_RADIUS * 2)
+                        end
+                    end
                     
-                    -- 2. Calculate a spot 3 studs away from the target
-                    local dir = (hrp.Position - myHrp.Position)
-                    local targetCFrame = CFrame.new(hrp.Position - dir.Unit * 3) * originalCFrame.Rotation
-                    
-                    -- 3. Tween to them really fast (0.05 seconds)
-                    myHrp.Anchored = true
-                    local tweenIn = TweenService:Create(myHrp, TweenInfo.new(0.05), {CFrame = targetCFrame})
-                    tweenIn:Play()
-                    tweenIn.Completed:Wait()
-                    
-                    -- 4. Fire the slap while we are close
                     fire_slap(p)
                     if fireMode == 1 then fireMode = 2 elseif fireMode == 2 then fireMode = 3 else fireMode = 1 end
-                    
-                    task.wait(0.05)
-                    
-                    -- 5. Tween back to where we started
-                    local tweenOut = TweenService:Create(myHrp, TweenInfo.new(0.05), {CFrame = originalCFrame})
-                    tweenOut:Play()
-                    tweenOut.Completed:Wait()
-                    
-                    myHrp.Anchored = false
-                    isSlapping = false
-                    break -- only slap one person per frame
                 end
             end
         end
@@ -140,7 +121,7 @@ Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.BackgroundTransparency = 1
-title.Text = "ollie • slap v11"
+title.Text = "ollie • slap v11.5"
 title.TextColor3 = Color3.fromRGB(230, 230, 235)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -177,12 +158,18 @@ btn.MouseButton1Click:Connect(function()
         btn.Text = "Slap Aura: OFF"
         btn.BackgroundColor3 = Color3.fromRGB(36, 36, 44)
         kill_ring()
+        -- Reset hitbox when turned off
+        local char = LP.Character
+        if char then
+            local hitbox = char:FindFirstChild("Hitbox") or char:FindFirstChild("SlapHitbox") or char:FindFirstChild("HumanoidRootPart")
+            if hitbox and hitbox.Name == "HumanoidRootPart" then hitbox.Size = Vector3.new(2, 2, 1) end
+        end
     end
 end)
 
 slider.MouseButton1Click:Connect(function()
     STATE.AURA_RADIUS = STATE.AURA_RADIUS + 2
-    if STATE.AURA_RADIUS > 12 then STATE.AURA_RADIUS = 4 end
+    if STATE.AURA_RADIUS > 14 then STATE.AURA_RADIUS = 6 end
     slider.Text = "Radius: " .. STATE.AURA_RADIUS
 end)
 
@@ -190,4 +177,4 @@ RunService.RenderStepped:Connect(function()
     if STATE.SLAP_AURA then pcall(slap_aura_step) end
 end)
 
-print("[ollie] slap v11 live. remote=", SlapRemote ~= nil)
+print("[ollie] slap v11.5 live. remote=", SlapRemote ~= nil)
