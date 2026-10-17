@@ -116,7 +116,11 @@ local function slap_aura_step()
     if not myHrp then return end
 
     local ring = build_ring()
-    ring.CFrame = CFrame.new(myHrp.Position.X, myHrp.Position.Y - 2.8, myHrp.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
+        local rayParams = RaycastParams.new()
+    rayParams.FilterDescendantsInstances = {LP.Character}
+    local ray = Workspace:Raycast(myHrp.Position, Vector3.new(0, -50, 0), rayParams)
+    local floorY = ray and ray.Position.Y or (myHrp.Position.Y - 3)
+    ring.CFrame = CFrame.new(myHrp.Position.X, floorY + 0.1, myHrp.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
     ring.Size = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
 
     local now = tick()
@@ -128,6 +132,13 @@ local function slap_aura_step()
                 local last = lastSlap[p] or 0
                 if now - last >= 0.12 then
                     lastSlap[p] = now
+                     local char = LP.Character
+                    if char then
+                        local hb = char:FindFirstChild("Hitbox") or char:FindFirstChild("HumanoidRootPart")
+                        if hb and hb.Size.X < 10 then
+                            hb.Size = Vector3.new(15, 15, 15)
+                        end
+                    end
                     fire_slap(p)
                     if fireMode == 1 then fireMode = 2 elseif fireMode == 2 then fireMode = 3 else fireMode = 1 end
                 end
