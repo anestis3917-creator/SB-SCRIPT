@@ -743,7 +743,62 @@ local function follow_aura()
     local hrp = get_hrp()
     if hrp then AURA_PART.CFrame = hrp.CFrame end
 end
-
+local function update_player_esp()
+    local cam = Workspace.CurrentCamera
+    if not cam then return end
+    local my_hrp = get_hrp()
+    local my_pos = my_hrp and my_hrp.Position
+    
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP then
+            local char = p.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local head = char and char:FindFirstChild("Head")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local vis = false
+            
+            if hrp and head and hum and hum.Health > 0 then
+                local dist = my_pos and (hrp.Position - my_pos).Magnitude or 0
+                if dist <= CONFIG.ESP_RANGE then
+                    local spTop, onTop = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 1, 0))
+                    local spBot, onBot = cam:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
+                    
+                    if onTop and onBot then
+                        if not playerDrawings[p] then
+                            playerDrawings[p] = {
+                                name = new_text(Color3.fromRGB(255, 255, 255)),
+                                glove = new_text(Color3.fromRGB(200, 200, 200)),
+                                box = new_box(Color3.fromRGB(255, 255, 255)),
+                            }
+                        end
+                        local d = playerDrawings[p]
+                        
+                        local h = math.abs(spBot.Y - spTop.Y)
+                        local w = h * 0.4
+                        local boxTop = math.min(spTop.Y, spBot.Y)
+                        
+                        d.box.Size = Vector2.new(w, h)
+                        d.box.Position = Vector2.new(spTop.X - w/2, boxTop)
+                        d.box.Visible = true
+                        
+                        d.name.Text = p.Name
+                        d.name.Position = Vector2.new(spTop.X, boxTop - 16)
+                        d.name.Visible = true
+                        
+                        d.glove.Text = get_glove(p)
+                        d.glove.Position = Vector2.new(spTop.X, boxTop + h + 2)
+                        d.glove.Visible = true
+                        
+                        vis = true
+                    end
+                end
+            end
+            if not vis and playerDrawings[p] then
+                for _, o in pairs(playerDrawings[p]) do o.Visible = false end
+            end
+        end
+    end
+end
 RunService.RenderStepped:Connect(function()
     if STATE.ESP_PLAYERS then pcall(update_player_esp) end
 
