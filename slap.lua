@@ -1,4 +1,4 @@
--- slap.lua — v14.0 (Universal: All Gloves, Royale + Normal SB)
+-- slap.lua — v15.0 (Stationary Tool Return)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
@@ -8,8 +8,7 @@ local LP                = Players.LocalPlayer
 
 local STATE = {
     SLAP_AURA   = false,
-    AURA_RADIUS = 8, 
-    IS_ROYALE   = false,
+    AURA_RADIUS = 8,
 }
 
 local AURA_RING    = nil
@@ -21,30 +20,18 @@ local function get_hrp()
     return c and c:FindFirstChild("HumanoidRootPart") or nil
 end
 
--- AUTO-DETECT REMOTES
+-- Auto-detect all slap remotes
 local function scan_remotes()
     ActiveRemotes = {}
     local folder = ReplicatedStorage:FindFirstChild("Events") or ReplicatedStorage:FindFirstChild("Remotes")
     if not folder then return end
-
     for _, v in pairs(folder:GetChildren()) do
         if v:IsA("RemoteEvent") then
             local n = v.Name:lower()
-            -- Grab any remote that looks like a slap or a hit
             if n:find("slap") or n:find("hit") or n:find("swing") or n:find("punch") then
                 table.insert(ActiveRemotes, v)
             end
         end
-    end
-end
-
--- Detect if we are in Royale based on the map layout
-local function check_game_mode()
-    -- Slap Royale has a "BusModel" or specific lobby parts
-    local isRoyale = Workspace:FindFirstChild("BusModel") ~= nil or Workspace:FindFirstChild("RoyaleMap") ~= nil
-    if isRoyale ~= STATE.IS_ROYALE then
-        STATE.IS_ROYALE = isRoyale
-        scan_remotes() -- Rescan remotes when map changes
     end
 end
 
@@ -77,14 +64,13 @@ local function in_circle(targetPos, myPos, r)
 end
 
 local function fire_all_slaps(target)
-    -- 1. Spoof the click so the game thinks you swung your glove
+    -- Swing the glove
     local char = LP.Character
     if char then
         local tool = char:FindFirstChildOfClass("Tool")
         if tool then pcall(function() tool:Activate() end) end
     end
-
-    -- 2. Fire every single slap/hit remote we found
+    -- Fire all remotes
     local hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
     for _, remote in ipairs(ActiveRemotes) do
         pcall(function()
@@ -99,7 +85,6 @@ local function slap_aura_step()
     local myHrp = get_hrp()
     if not myHrp then return end
 
-    -- Update ring
     local ring = build_ring()
     local rayParams = RaycastParams.new()
     rayParams.FilterDescendantsInstances = {LP.Character}
@@ -109,32 +94,45 @@ local function slap_aura_step()
     ring.CFrame = CFrame.new(myHrp.Position.X, floorY + 0.1, myHrp.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
     ring.Size = Vector3.new(0.2, STATE.AURA_RADIUS * 2, STATE.AURA_RADIUS * 2)
 
-    -- Check targets
     local now = tick()
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LP and p.Character then
             local hrp = p.Character:FindFirstChild("HumanoidRootPart")
             local hum = p.Character:FindFirstChildOfClass("Humanoid")
-            
             if hrp and hum and hum.Health > 0 and in_circle(hrp.Position, myHrp.Position, STATE.AURA_RADIUS) then
                 local last = lastSlap[p] or 0
-                -- Anti-kick limit: slap each player only once every 0.25 seconds
                 if now - last >= 0.25 then
                     lastSlap[p] = now
-                    fire_all_slaps(p)
+                    
+                    -- THE TOOL RETURN TRICK
+                    local char = LP.Character
+                    local tool = char and char:FindFirstChildOfClass("Tool")
+                    
+                    if tool and tool:FindFirstChild("Handle") then
+                        local handle = tool.Handle
+                        local originalCFrame = handle.CFrame
+                        
+                        -- 1. Move the tool handle to the target's chest so the server thinks you are touching
+                        handle.CFrame = hrp.CFrame 
+                        
+                        -- 2. Fire the slaps
+                        fire_all_slaps(p)
+                        
+                        -- 3. Snap the tool back to your hand
+                        handle.CFrame = originalCFrame
+                    else
+                        -- Fallback if no tool equipped
+                        fire_all_slaps(p)
+                    end
                 end
             end
         end
     end
 end
 
--- Auto-scan on load, and re-scan when respawning
 scan_remotes()
-task.spawn(function()
-    while task.wait(2) do check_game_mode() end
-end)
 
--- UI CODE
+-- UI
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "_oll_ui"
 ScreenGui.ResetOnSpawn = false
@@ -153,7 +151,7 @@ Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.BackgroundTransparency = 1
-title.Text = "ollie • slap v14"
+title.Text = "ollie • slap v15"
 title.TextColor3 = Color3.fromRGB(230, 230, 235)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -203,4 +201,4 @@ RunService.RenderStepped:Connect(function()
     if STATE.SLAP_AURA then pcall(slap_aura_step) end
 end)
 
-print("[ollie] slap v14 live. remotes found:", #ActiveRemotes)
+print("[ollie] slap v15 live. remotes found:", #ActiveRemotes)
