@@ -444,6 +444,19 @@ print("v8.1: sections built")
 local playerDrawings, itemDrawings = {}, {}
 local gloveCache = {}
 local itemScanAccum = 0
+local itemCache = {}
+local itemCacheAge = 0
+
+local function rebuild_item_cache()
+    itemCache = {}
+    local root = Workspace:FindFirstChild("Items") or Workspace
+    for _, obj in ipairs(root:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.Parent and matches(obj.Parent.Name) then
+            table.insert(itemCache, obj)
+        end
+    end
+end
+
 
 local function new_text(color)
     local t = Drawing.new("Text")
@@ -529,13 +542,15 @@ local function update_item_esp()
     if not cam then return end
     local my_hrp = get_hrp()
     local my_pos = my_hrp and my_hrp.Position
+    if not my_pos then return end
     local seen = {}
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.Parent and matches(obj.Parent.Name) then
+    for _, obj in ipairs(itemCache) do
+        if obj.Parent then
             local part = prompt_part(obj)
             if part then
-                local dist = my_pos and (part.Position - my_pos).Magnitude or 0
-                if dist <= CONFIG.ESP_RANGE then
+                local delta = part.Position - my_pos
+                local dist = delta.Magnitude
+                if dist <= 500 then
                     local sp, on = cam:WorldToViewportPoint(part.Position + Vector3.new(0, 2, 0))
                     if on then
                         seen[obj] = true
@@ -552,6 +567,13 @@ local function update_item_esp()
             end
         end
     end
+    for obj, d in pairs(itemDrawings) do
+        if not seen[obj] or not obj.Parent then
+            for _, o in pairs(d) do pcall(function() o:Remove() end) end
+            itemDrawings[obj] = nil
+        end
+    end
+end
     for obj, d in pairs(itemDrawings) do
         if not seen[obj] or not obj.Parent then
             for _, o in pairs(d) do pcall(function() o:Remove() end) end
@@ -658,17 +680,18 @@ local function follow_aura()
     if hrp then AURA_PART.CFrame = hrp.CFrame end
 end
 
-RunService.RenderStepped:Connect(function()
-    if STATE.ESP_PLAYERS then pcall(update_player_esp) end
-
     if STATE.ESP_ITEMS then
         itemScanAccum = itemScanAccum + 1
-        if itemScanAccum >= 30 then
+        itemCacheAge = itemCacheAge + 1
+        if itemCacheAge >= 120 then
+            itemCacheAge = 0
+            pcall(rebuild_item_cache)
+        end
+        if itemScanAccum >= 60 then
             itemScanAccum = 0
             pcall(update_item_esp)
         end
     end
-
     if STATE.HIDE_AURA or STATE.HIDE_LOBBY then
         make_aura()
         if STATE.HIDE_LOBBY then
