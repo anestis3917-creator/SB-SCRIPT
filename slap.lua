@@ -1,4 +1,4 @@
--- slap.lua — v19.3 (Anti-Slap: Glove Check)
+-- slap.lua — v19.4 (Pure Velocity Freeze)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local Workspace         = game:GetService("Workspace")
@@ -24,13 +24,10 @@ local function toggle_anti_slap(on)
     if antiSlapConnection then
         antiSlapConnection:Disconnect()
         antiSlapConnection = nil
-        -- Force unfreeze on toggle off
         local char = LP.Character
         if char then
-            local hrp = char:FindFirstChild("HumanoidRootPart")
             local hum = char:FindFirstChildOfClass("Humanoid")
-            if hrp then hrp.Anchored = false; hrp.Velocity = Vector3.new(0,0,0) end
-            if hum then hum.WalkSpeed = 16; hum.JumpPower = 50 end
+            if hum then hum.WalkSpeed = 16 end
         end
     end
 
@@ -43,21 +40,18 @@ local function toggle_anti_slap(on)
         local hum = char:FindFirstChildOfClass("Humanoid")
         if not hrp or not hum then return end
 
-        -- Slap Battles removes your glove when you get slapped/ragdolled
+        -- Glove check: if no tool, you are slapped/ragdolled
         local tool = char:FindFirstChildOfClass("Tool")
         local isSlapped = (tool == nil) 
 
         if isSlapped then
-            -- Freeze: anchor and kill speed
-            if not hrp.Anchored then hrp.Anchored = true end
+            -- Kill velocity ONLY. Do not anchor.
             hrp.Velocity = Vector3.new(0, 0, 0)
             hum.WalkSpeed = 0
         else
-            -- Unfreeze: release anchor and restore speed
-            if hrp.Anchored then hrp.Anchored = false end
+            -- Unfreeze
             if hum.WalkSpeed == 0 then
                 hum.WalkSpeed = 16
-                hum.JumpPower = 50
             end
         end
     end)
@@ -98,7 +92,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -70, 1, 0)
 titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "ollie  •  slap v19.3"
+titleLabel.Text = "ollie  •  slap v19.4"
 titleLabel.TextColor3 = COLORS.text
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 13
@@ -216,7 +210,7 @@ local function toggle_row(text, key, callback)
 end
 
 section("COMBAT")
-toggle_row("Anti-Slap (Glove Check)", "ANTI_SLAP", function(v) toggle_anti_slap(v) end)
+toggle_row("Anti-Slap (Velocity)", "ANTI_SLAP", function(v) toggle_anti_slap(v) end)
 
 section("ESP")
 toggle_row("Player ESP", "ESP_PLAYERS", function(v) if not v then for _, d in pairs(playerDrawings) do for _, o in pairs(d) do pcall(function() o.Visible = false end) end end end end)
@@ -339,4 +333,4 @@ closeBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
-print("[ollie] slap v19.3 live.")
+print("[ollie] slap v19.4 live.")
