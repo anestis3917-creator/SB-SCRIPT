@@ -37,6 +37,14 @@ local STATE = {
     EXPANDER    = 1,
 }
 
+local BUS_MARKER_NAME = "BusModel"
+local IN_BUS = false
+local function detect_bus()
+    local bus = Workspace:FindFirstChild(BUS_MARKER_NAME)
+    IN_BUS = bus ~= nil
+    return IN_BUS
+end
+
 local AURA_PART = nil
 local LOOT_GEN  = 0
 local SAVED_WALKSPEED = nil
